@@ -39,7 +39,7 @@ namespace NeoClientVis
 
             // Заполняем выпадающий список типами
             NodeTypeComboBox.ItemsSource = _nodeTypes.Select(nt => nt.Label.First().Key);
-            NodeTypeComboBox.SelectedIndex = 0; // Выбираем первый элемент
+            NodeTypeComboBox.SelectedIndex = 0;
         }
 
         private async void NodeTypeComboBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
@@ -73,6 +73,57 @@ namespace NeoClientVis
 
             return result.ToList();
         }
+
+        private async void AddPropertyButton_Click(object sender, RoutedEventArgs e)
+        {
+            if (NodeTypeComboBox.SelectedItem is string selectedType)
+            {
+                var selectedNodeType = _nodeTypes.FirstOrDefault(nt => nt.Label.ContainsKey(selectedType));
+                if (selectedNodeType != null)
+                {
+                    // Запрашиваем название нового свойства
+                    string newProperty = Microsoft.VisualBasic.Interaction.InputBox(
+                        "Введите название нового свойства:",
+                        "Добавление свойства",
+                        "",
+                        -1, -1);
+
+                    if (!string.IsNullOrWhiteSpace(newProperty) && !selectedNodeType.Properties.ContainsKey(newProperty))
+                    {
+                        // Добавляем новое свойство в текущий тип (значение по умолчанию - "prop_n")
+                        int propCount = selectedNodeType.Properties.Count;
+                        selectedNodeType.Properties[newProperty] = $"prop_{propCount}";
+
+                        // Обновляем все узлы этого типа в Neo4j
+                        string label = selectedNodeType.Label.Values.First();
+                        await UpdateNodesWithNewProperty(_client, label, newProperty);
+
+                        // Сохраняем обновлённый список типов в базу
+                        await SaveNodeTypesToDb(_client, _nodeTypes);
+
+                        // Обновляем интерфейс
+                        PropertiesListBox.ItemsSource = null; // Сбрасываем, чтобы обновить
+                        PropertiesListBox.ItemsSource = selectedNodeType.Properties.Keys;
+
+                        // Перезагружаем список узлов
+                        var nodes = await LoadNodesByType(_client, label);
+                        NodesListBox.ItemsSource = nodes.Select(n => $"Node: {string.Join(", ", n.Properties.Select(p => $"{p.Key}: {p.Value}"))}");
+                    }
+                    else if (selectedNodeType.Properties.ContainsKey(newProperty))
+                    {
+                        MessageBox.Show("Свойство с таким названием уже существует!");
+                    }
+                }
+            }
+        }
+        private async Task UpdateNodesWithNewProperty(GraphClient client, string label, string newProperty)
+        {
+            await client.Cypher
+                .Match($"(n:{label})")
+                .Set($"n.{newProperty} = ''") // Добавляем новое свойство с пустым значением
+                .ExecuteWithoutResultsAsync();
+        }
+
 
         // Метод загрузки типов узлов из базы
         private async Task<List<NodeType>> LoadNodeTypesFromDb(GraphClient client)
