@@ -27,10 +27,21 @@
                     Click="AddNodeButton_Click"/>
         </StackPanel>
 
-        <!-- Список узлов -->
+        <!-- Список узлов с контекстным меню -->
         <ListBox x:Name="NodesListBox" 
                  Grid.Row="1" Grid.Column="0" 
-                 Margin="10"/>
+                 Margin="10">
+            <ListBox.ContextMenu>
+                <ContextMenu>
+                    <MenuItem Header="Перейти" Click="GoToMenuItem_Click"/>
+                    <MenuItem Header="Связанные" Click="RelatedMenuItem_Click"/>
+                    <MenuItem Header="Свойства" Click="PropertiesMenuItem_Click"/>
+                    <MenuItem Header="Добавить" Click="AddMenuItem_Click"/>
+                    <MenuItem Header="Заменить" Click="ReplaceMenuItem_Click"/>
+                    <MenuItem Header="Удалить" Click="DeleteMenuItem_Click"/>
+                </ContextMenu>
+            </ListBox.ContextMenu>
+        </ListBox>
 
         <!-- Правая колонка: свойства и кнопка -->
         <Grid Grid.Row="1" Grid.Column="1">

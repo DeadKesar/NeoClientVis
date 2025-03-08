@@ -72,5 +72,32 @@ namespace NeoClientVis
                 .WithParams(properties.ToDictionary(p => p.Key, p => (object)p.Value))
                 .ExecuteWithoutResultsAsync();
         }
+        public static async Task UpdateNodeProperties(GraphClient client, string label, Dictionary<string, object> oldProperties, Dictionary<string, string> newProperties)
+        {
+            // Формируем условие для поиска узла по старым свойствам
+            var matchProperties = string.Join(" AND ", oldProperties.Select(p => $"n.{p.Key} = ${p.Key}"));
+            var setProperties = string.Join(", ", newProperties.Select(p => $"n.{p.Key} = ${p.Key}_new"));
+
+            await client.Cypher
+                .Match($"(n:{label})")
+                .Where(matchProperties)
+                .Set(setProperties)
+                .WithParams(oldProperties.ToDictionary(p => p.Key, p => p.Value)
+                    .Concat(newProperties.ToDictionary(p => $"{p.Key}_new", p => (object)p.Value))
+                    .ToDictionary(p => p.Key, p => p.Value))
+                .ExecuteWithoutResultsAsync();
+        }
+        public static async Task DeleteNode(GraphClient client, string label, Dictionary<string, object> properties)
+        {
+            var matchProperties = string.Join(" AND ", properties.Select(p => $"n.{p.Key} = ${p.Key}"));
+            await client.Cypher
+                .Match($"(n:{label})")
+                .Where(matchProperties)
+                .Delete("n")
+                .WithParams(properties.ToDictionary(p => p.Key, p => p.Value))
+                .ExecuteWithoutResultsAsync();
+        }
+
+
     }
 }

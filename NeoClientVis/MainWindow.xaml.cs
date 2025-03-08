@@ -149,5 +149,82 @@ namespace NeoClientVis
                 MessageBox.Show("Сначала выберите тип узла!");
             }
         }
+        // Обработчики контекстного меню
+        private async void PropertiesMenuItem_Click(object sender, RoutedEventArgs e)
+        {
+            if (NodesListBox.SelectedItem is string selectedNodeString)
+            {
+                var selectedType = NodeTypeComboBox.SelectedItem as string;
+                var selectedNodeType = _nodeTypeCollection.NodeTypes.FirstOrDefault(nt => nt.Label.ContainsKey(selectedType));
+                if (selectedNodeType != null)
+                {
+                    string label = selectedNodeType.Label.Values.First();
+                    var nodes = await BDController.LoadNodesByType(_client, label);
+                    var selectedNode = nodes.FirstOrDefault(n => $"Node: {string.Join(", ", n.Properties.Select(p => $"{p.Key}: {p.Value}"))}" == selectedNodeString);
+
+                    if (selectedNode != null)
+                    {
+                        var editNodeWindow = new EditNodeWindow(selectedNode.Properties);
+                        editNodeWindow.Owner = this;
+                        if (editNodeWindow.ShowDialog() == true)
+                        {
+                            await BDController.UpdateNodeProperties(_client, label, selectedNode.Properties, editNodeWindow.Properties);
+
+                            // Обновляем список узлов
+                            nodes = await BDController.LoadNodesByType(_client, label);
+                            NodesListBox.ItemsSource = nodes.Select(n => $"Node: {string.Join(", ", n.Properties.Select(p => $"{p.Key}: {p.Value}"))}");
+                        }
+                    }
+                }
+            }
+        }
+
+        private async void DeleteMenuItem_Click(object sender, RoutedEventArgs e)
+        {
+            if (NodesListBox.SelectedItem is string selectedNodeString)
+            {
+                var selectedType = NodeTypeComboBox.SelectedItem as string;
+                var selectedNodeType = _nodeTypeCollection.NodeTypes.FirstOrDefault(nt => nt.Label.ContainsKey(selectedType));
+                if (selectedNodeType != null)
+                {
+                    string label = selectedNodeType.Label.Values.First();
+                    var nodes = await BDController.LoadNodesByType(_client, label);
+                    var selectedNode = nodes.FirstOrDefault(n => $"Node: {string.Join(", ", n.Properties.Select(p => $"{p.Key}: {p.Value}"))}" == selectedNodeString);
+
+                    if (selectedNode != null)
+                    {
+                        // Подтверждение удаления
+                        var result = MessageBox.Show($"Вы уверены, что хотите удалить узел '{selectedNodeString}'?",
+                            "Подтверждение удаления", MessageBoxButton.YesNo, MessageBoxImage.Warning);
+                        if (result == MessageBoxResult.Yes)
+                        {
+                            await BDController.DeleteNode(_client, label, selectedNode.Properties);
+
+                            // Обновляем список узлов
+                            nodes = await BDController.LoadNodesByType(_client, label);
+                            NodesListBox.ItemsSource = nodes.Select(n => $"Node: {string.Join(", ", n.Properties.Select(p => $"{p.Key}: {p.Value}"))}");
+                        }
+                    }
+                }
+            }
+            else
+            {
+                MessageBox.Show("Выберите узел для удаления!");
+            }
+        }
+
+        // Заглушки для остальных пунктов меню
+        private void GoToMenuItem_Click(object sender, RoutedEventArgs e) { MessageBox.Show("Функция 'Перейти' пока не реализована."); }
+        private void RelatedMenuItem_Click(object sender, RoutedEventArgs e) { MessageBox.Show("Функция 'Связанные' пока не реализована."); }
+        private void AddMenuItem_Click(object sender, RoutedEventArgs e) { MessageBox.Show("Функция 'Добавить' пока не реализована."); }
+        private void ReplaceMenuItem_Click(object sender, RoutedEventArgs e) { MessageBox.Show("Функция 'Заменить' пока не реализована."); }
+
+
+
+
+
     }
+
+
+
 }
