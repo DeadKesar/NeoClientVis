@@ -13,7 +13,7 @@ namespace NeoClientVis
     public partial class MainWindow : Window
     {
         private GraphClient _client;
-        private List<NodeType> _nodeTypes;
+        private NodeTypeCollection _nodeTypeCollection;
 
         public MainWindow()
         {
@@ -21,67 +21,58 @@ namespace NeoClientVis
             InitializeNeo4jClient();
             LoadDataAsync();
         }
-
         private void InitializeNeo4jClient()
         {
             _client = new GraphClient(new Uri("http://localhost:7474"), "neo4j", "12345678a");
             _client.ConnectAsync().Wait(); // Синхронное подключение для простоты
         }
-
         private async void LoadDataAsync()
         {
-            _nodeTypes = await LoadNodeTypesFromDb(_client);
-            if (_nodeTypes.Count == 0) // Если база пуста, создаём пример данных
+            try
             {
-                _nodeTypes = new List<NodeType>();
-                await SaveNodeTypesToDb(_client, _nodeTypes);
-            }
+                await _client.ConnectAsync();
+                _nodeTypeCollection = await BDController.LoadNodeTypesFromDb(_client);
 
-            // Заполняем выпадающий список типами
-            NodeTypeComboBox.ItemsSource = _nodeTypes.Select(nt => nt.Label.First().Key);
-            NodeTypeComboBox.SelectedIndex = 0;
+                NodeTypeComboBox.ItemsSource = _nodeTypeCollection.NodeTypes.Select(nt => nt.Label.First().Key);
+                if (_nodeTypeCollection.NodeTypes.Count > 0)
+                {
+                    NodeTypeComboBox.SelectedIndex = 0;
+                }
+                else
+                {
+                    NodesListBox.ItemsSource = null;
+                    PropertiesListBox.ItemsSource = null;
+                }
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"Ошибка при загрузке данных: {ex.Message}");
+            }
         }
 
         private async void NodeTypeComboBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
         {
             if (NodeTypeComboBox.SelectedItem is string selectedType)
             {
-                // Находим выбранный тип
-                var selectedNodeType = _nodeTypes.FirstOrDefault(nt => nt.Label.ContainsKey(selectedType));
+                var selectedNodeType = _nodeTypeCollection.NodeTypes.FirstOrDefault(nt => nt.Label.ContainsKey(selectedType));
                 if (selectedNodeType != null)
                 {
-                    // Загружаем узлы этого типа
-                    var nodes = await LoadNodesByType(_client, selectedNodeType.Label.Values.First());
+                    var nodes = await BDController.LoadNodesByType(_client, selectedNodeType.Label.Values.First());
                     NodesListBox.ItemsSource = nodes.Select(n => $"Node: {string.Join(", ", n.Properties.Select(p => $"{p.Key}: {p.Value}"))}");
-
-                    // Отображаем свойства типа
                     PropertiesListBox.ItemsSource = selectedNodeType.Properties.Keys;
                 }
             }
         }
 
-        // Метод загрузки узлов по типу
-        private async Task<List<NodeData>> LoadNodesByType(GraphClient client, string label)
-        {
-            var result = await client.Cypher
-                .Match($"(n:{label})")
-                .Return(n => new NodeData
-                {
-                    Properties = n.As<Dictionary<string, object>>()
-                })
-                .ResultsAsync;
 
-            return result.ToList();
-        }
 
         private async void AddPropertyButton_Click(object sender, RoutedEventArgs e)
         {
             if (NodeTypeComboBox.SelectedItem is string selectedType)
             {
-                var selectedNodeType = _nodeTypes.FirstOrDefault(nt => nt.Label.ContainsKey(selectedType));
+                var selectedNodeType = _nodeTypeCollection.NodeTypes.FirstOrDefault(nt => nt.Label.ContainsKey(selectedType));
                 if (selectedNodeType != null)
                 {
-                    // Запрашиваем название нового свойства
                     string newProperty = Microsoft.VisualBasic.Interaction.InputBox(
                         "Введите название нового свойства:",
                         "Добавление свойства",
@@ -90,23 +81,16 @@ namespace NeoClientVis
 
                     if (!string.IsNullOrWhiteSpace(newProperty) && !selectedNodeType.Properties.ContainsKey(newProperty))
                     {
-                        // Добавляем новое свойство в текущий тип (значение по умолчанию - "prop_n")
                         int propCount = selectedNodeType.Properties.Count;
                         selectedNodeType.Properties[newProperty] = $"prop_{propCount}";
-
-                        // Обновляем все узлы этого типа в Neo4j
                         string label = selectedNodeType.Label.Values.First();
-                        await UpdateNodesWithNewProperty(_client, label, newProperty);
+                        await BDController.UpdateNodesWithNewProperty(_client, label, newProperty);
+                        await BDController.SaveNodeTypesToDb(_client, _nodeTypeCollection);
 
-                        // Сохраняем обновлённый список типов в базу
-                        await SaveNodeTypesToDb(_client, _nodeTypes);
-
-                        // Обновляем интерфейс
-                        PropertiesListBox.ItemsSource = null; // Сбрасываем, чтобы обновить
+                        PropertiesListBox.ItemsSource = null;
                         PropertiesListBox.ItemsSource = selectedNodeType.Properties.Keys;
 
-                        // Перезагружаем список узлов
-                        var nodes = await LoadNodesByType(_client, label);
+                        var nodes = await BDController.LoadNodesByType(_client, label);
                         NodesListBox.ItemsSource = nodes.Select(n => $"Node: {string.Join(", ", n.Properties.Select(p => $"{p.Key}: {p.Value}"))}");
                     }
                     else if (selectedNodeType.Properties.ContainsKey(newProperty))
@@ -116,81 +100,53 @@ namespace NeoClientVis
                 }
             }
         }
-        private async Task UpdateNodesWithNewProperty(GraphClient client, string label, string newProperty)
+        private async void AddNodeTypeButton_Click(object sender, RoutedEventArgs e)
         {
-            await client.Cypher
-                .Match($"(n:{label})")
-                .Set($"n.{newProperty} = ''") // Добавляем новое свойство с пустым значением
-                .ExecuteWithoutResultsAsync();
+            string newTypeName = Microsoft.VisualBasic.Interaction.InputBox(
+                "Введите название нового типа:",
+                "Добавление типа узла",
+                "",
+                -1, -1);
+
+            if (!string.IsNullOrWhiteSpace(newTypeName) && !_nodeTypeCollection.NodeTypes.Any(nt => nt.Label.ContainsKey(newTypeName)))
+            {
+                _nodeTypeCollection.AddNodeType(newTypeName);
+                await BDController.SaveNodeTypesToDb(_client, _nodeTypeCollection);
+
+                NodeTypeComboBox.ItemsSource = null;
+                NodeTypeComboBox.ItemsSource = _nodeTypeCollection.NodeTypes.Select(nt => nt.Label.First().Key);
+                NodeTypeComboBox.SelectedItem = newTypeName;
+            }
+            else if (_nodeTypeCollection.NodeTypes.Any(nt => nt.Label.ContainsKey(newTypeName)))
+            {
+                MessageBox.Show("Тип с таким названием уже существует!");
+            }
         }
 
-
-        // Метод загрузки типов узлов из базы
-        private async Task<List<NodeType>> LoadNodeTypesFromDb(GraphClient client)
+        private async void AddNodeButton_Click(object sender, RoutedEventArgs e)
         {
-            var result = await client.Cypher
-                .Match("(n:NodeTypes)")
-                .Return(n => n.As<Dictionary<string, object>>())
-                .ResultsAsync;
-
-            var json = result.FirstOrDefault()?["data"].ToString();
-            if (json != null)
+            if (NodeTypeComboBox.SelectedItem is string selectedType)
             {
-                try
+                var selectedNodeType = _nodeTypeCollection.NodeTypes.FirstOrDefault(nt => nt.Label.ContainsKey(selectedType));
+                if (selectedNodeType != null)
                 {
-                    return JsonConvert.DeserializeObject<List<NodeType>>(json);
-                }
-                catch (Exception ex)
-                {
-                    MessageBox.Show($"Ошибка десериализации: {ex.Message}");
-                    return new List<NodeType>();
+                    // Открываем окно для ввода свойств
+                    var addNodeWindow = new AddNodeWindow(selectedNodeType.Properties);
+                    addNodeWindow.Owner = this;
+                    if (addNodeWindow.ShowDialog() == true)
+                    {
+                        string label = selectedNodeType.Label.Values.First();
+                        await BDController.AddNodeToDb(_client, label, addNodeWindow.Properties);
+
+                        // Обновляем список узлов
+                        var nodes = await BDController.LoadNodesByType(_client, label);
+                        NodesListBox.ItemsSource = nodes.Select(n => $"Node: {string.Join(", ", n.Properties.Select(p => $"{p.Key}: {p.Value}"))}");
+                    }
                 }
             }
-            return new List<NodeType>();
-        }
-
-        // Метод сохранения типов узлов в базу
-        private async Task SaveNodeTypesToDb(GraphClient client, List<NodeType> nodeTypes)
-        {
-            var json = JsonConvert.SerializeObject(nodeTypes, Formatting.Indented);
-            await client.Cypher
-                .Merge("(n:NodeTypes)")
-                .OnCreate()
-                .Set("n.data = $json")
-                .OnMatch()
-                .Set("n.data = $json")
-                .WithParam("json", json)
-                .ExecuteWithoutResultsAsync();
-        }
-    }
-
-    // Класс для представления данных узла
-    public class NodeData
-    {
-        public Dictionary<string, object> Properties { get; set; }
-    }
-
-    // Класс NodeType из вашего кода
-    public class NodeType
-    {
-        public static int createdCount = 0;
-        public Dictionary<string, string> Label { get; set; }
-        public Dictionary<string, string> Properties { get; set; }
-
-        public NodeType()
-        {
-            Label = new Dictionary<string, string>();
-            Properties = new Dictionary<string, string>();
-        }
-
-        public NodeType(string labelKey, List<string> properties)
-        {
-            createdCount++;
-            Label = new Dictionary<string, string> { { labelKey, $"Label_{createdCount}" } };
-            Properties = new Dictionary<string, string>();
-            for (int i = 0; i < properties.Count; i++)
+            else
             {
-                Properties[properties[i]] = $"prop_{i}";
+                MessageBox.Show("Сначала выберите тип узла!");
             }
         }
     }
