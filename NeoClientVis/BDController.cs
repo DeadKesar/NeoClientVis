@@ -64,29 +64,95 @@ namespace NeoClientVis
                 .ExecuteWithoutResultsAsync();
         }
 
-        public static async Task AddNodeToDb(GraphClient client, string label, Dictionary<string, string> properties)
+        public static async Task AddNodeToDb(GraphClient client, string label, Dictionary<string, object> properties, Dictionary<string, Type> propertyTypes)
         {
-            var propertiesString = string.Join(", ", properties.Select(p => $"{p.Key}: ${p.Key}"));
-            await client.Cypher
-                .Create($"(n:{label} {{ {propertiesString} }})")
-                .WithParams(properties.ToDictionary(p => p.Key, p => (object)p.Value))
-                .ExecuteWithoutResultsAsync();
-        }
-        public static async Task UpdateNodeProperties(GraphClient client, string label, Dictionary<string, object> oldProperties, Dictionary<string, string> newProperties)
-        {
-            // Формируем условие для поиска узла по старым свойствам
-            var matchProperties = string.Join(" AND ", oldProperties.Select(p => $"n.{p.Key} = ${p.Key}"));
-            var setProperties = string.Join(", ", newProperties.Select(p => $"n.{p.Key} = ${p.Key}_new"));
+            try
+            {
+                var validatedProperties = new Dictionary<string, object>();
+                foreach (var prop in properties)
+                {
+                    if (propertyTypes[prop.Key] == typeof(Neo4j.Driver.LocalDate))
+                    {
+                        if (DateTime.TryParse(prop.Value?.ToString(), out var date))
+                            validatedProperties[prop.Key] = new Neo4j.Driver.LocalDate(date.Year, date.Month, date.Day);
+                        else
+                            throw new ArgumentException($"Неверный формат даты для свойства '{prop.Key}': {prop.Value}");
+                    }
+                    else if (propertyTypes[prop.Key] == typeof(bool))
+                    {
+                        if (prop.Value is bool boolValue)
+                            validatedProperties[prop.Key] = boolValue;
+                        else if (bool.TryParse(prop.Value?.ToString(), out boolValue))
+                            validatedProperties[prop.Key] = boolValue;
+                        else
+                            throw new ArgumentException($"Неверный формат булевого значения для свойства '{prop.Key}': {prop.Value}");
+                    }
+                    else
+                    {
+                        validatedProperties[prop.Key] = prop.Value?.ToString() ?? "";
+                    }
+                }
 
-            await client.Cypher
-                .Match($"(n:{label})")
-                .Where(matchProperties)
-                .Set(setProperties)
-                .WithParams(oldProperties.ToDictionary(p => p.Key, p => p.Value)
-                    .Concat(newProperties.ToDictionary(p => $"{p.Key}_new", p => (object)p.Value))
-                    .ToDictionary(p => p.Key, p => p.Value))
-                .ExecuteWithoutResultsAsync();
+                var propertiesString = string.Join(", ", validatedProperties.Select(p => $"{p.Key}: ${p.Key}"));
+                await client.Cypher
+                    .Create($"(n:{label} {{ {propertiesString} }})")
+                    .WithParams(validatedProperties)
+                    .ExecuteWithoutResultsAsync();
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"Ошибка при добавлении узла: {ex.Message}");
+                throw;
+            }
         }
+
+
+        public static async Task UpdateNodeProperties(GraphClient client, string label, Dictionary<string, object> oldProperties, Dictionary<string, object> newProperties, Dictionary<string, Type> propertyTypes = null)
+        {
+            if (client == null) throw new ArgumentNullException(nameof(client));
+            if (string.IsNullOrEmpty(label)) throw new ArgumentException("Метка узла не может быть пустой.", nameof(label));
+            if (oldProperties == null || !oldProperties.Any()) throw new ArgumentException("Старые свойства не могут быть пустыми.", nameof(oldProperties));
+            if (newProperties == null || !newProperties.Any()) throw new ArgumentException("Новые свойства не могут быть пустыми.", nameof(newProperties));
+
+            try
+            {
+                var matchProperties = string.Join(" AND ", oldProperties.Select(p => $"n.{p.Key} = ${p.Key}"));
+                var setProperties = string.Join(", ", newProperties.Select(p => $"n.{p.Key} = ${p.Key}_new"));
+
+                var parameters = oldProperties.ToDictionary(p => p.Key, p => p.Value);
+
+                foreach (var prop in newProperties)
+                {
+                    if (propertyTypes != null && propertyTypes.TryGetValue(prop.Key, out var type) && type == typeof(Neo4j.Driver.LocalDate) && prop.Value is string dateStr)
+                    {
+                        if (DateTime.TryParse(dateStr, out var date))
+                        {
+                            parameters[$"{prop.Key}_new"] = new Neo4j.Driver.LocalDate(date.Year, date.Month, date.Day);
+                        }
+                        else
+                        {
+                            throw new ArgumentException($"Неверный формат даты для свойства '{prop.Key}': {dateStr}");
+                        }
+                    }
+                    else
+                    {
+                        parameters[$"{prop.Key}_new"] = prop.Value;
+                    }
+                }
+
+                await client.Cypher
+                    .Match($"(n:{label})")
+                    .Where(matchProperties)
+                    .Set(setProperties)
+                    .WithParams(parameters)
+                    .ExecuteWithoutResultsAsync();
+            }
+            catch (Exception ex)
+            {
+                throw new Exception($"Ошибка при обновлении свойств узла с меткой '{label}': {ex.Message}", ex);
+            }
+        }
+
         public static async Task DeleteNode(GraphClient client, string label, Dictionary<string, object> properties)
         {
             var matchProperties = string.Join(" AND ", properties.Select(p => $"n.{p.Key} = ${p.Key}"));
@@ -97,7 +163,70 @@ namespace NeoClientVis
                 .WithParams(properties.ToDictionary(p => p.Key, p => p.Value))
                 .ExecuteWithoutResultsAsync();
         }
+        public static async Task UpdateNodesWithNewProperty(GraphClient client, string label, string newProperty, object defaultValue)
+        {
+            await client.Cypher
+                .Match($"(n:{label})")
+                .Set($"n.{newProperty} = $value")
+                .WithParam("value", defaultValue)
+                .ExecuteWithoutResultsAsync();
+        }
+        public static async Task AddRelevanceToExistingNodes(GraphClient client, string label)
+        {
+            await client.Cypher
+                .Match($"(n:{label})")
+                .Where("NOT EXISTS(n.Актуальность)")
+                .Set("n.Актуальность = true")
+                .ExecuteWithoutResultsAsync();
+        }
+        public static async Task<List<NodeData>> LoadFilteredNodes(GraphClient client, string label, Dictionary<string, object> filters)
+        {
+            var query = client.Cypher.Match($"(n:{label})");
 
+            foreach (var filter in filters)
+            {
+                if (filter.Key == "Актуальность" && filter.Value is bool boolValue)
+                {
+                    query = query.Where($"n.{filter.Key} = $boolValue").WithParam("boolValue", boolValue);
+                }
+                else if (filter.Key == "Дата" && filter.Value is { } dateFilter)
+                {
+                    var from = dateFilter.GetType().GetProperty("From")?.GetValue(dateFilter) as DateTime?;
+                    var to = dateFilter.GetType().GetProperty("To")?.GetValue(dateFilter) as DateTime?;
+                    if (from.HasValue)
+                        query = query.Where($"n.{filter.Key} >= $fromDate").WithParam("fromDate", from.Value);
+                    if (to.HasValue)
+                        query = query.Where($"n.{filter.Key} <= $toDate").WithParam("toDate", to.Value);
+                }
+                else if (filter.Value is string stringValue)
+                {
+                    query = query.Where($"n.{filter.Key} =~ '(?i).*' + $stringValue + '.*'")
+                                .WithParam("stringValue", stringValue);
+                }
+            }
 
+            var result = await query
+                .Return(n => new NodeData { Properties = n.As<Dictionary<string, object>>() })
+                .ResultsAsync;
+
+            return result.ToList();
+        }
+
+        public static async Task UpdateBoolProperties(GraphClient client, string label, string propertyName)
+        {
+            await client.Cypher
+                .Match($"(n:{label})")
+                .Where($"n.{propertyName} = 'True'")
+                .Set($"n.{propertyName} = true")
+                .ExecuteWithoutResultsAsync();
+
+            await client.Cypher
+                .Match($"(n:{label})")
+                .Where($"n.{propertyName} = 'False'")
+                .Set($"n.{propertyName} = false")
+                .ExecuteWithoutResultsAsync();
+        }
     }
+
 }
+

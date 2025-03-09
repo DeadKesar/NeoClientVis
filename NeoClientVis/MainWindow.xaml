@@ -25,6 +25,10 @@
                     Content="Добавить объект" 
                     Margin="10,0,0,0" 
                     Click="AddNodeButton_Click"/>
+            <Button x:Name="ResetFiltersButton" 
+                    Content="Сбросить фильтры" 
+                    Margin="10,0,0,0" 
+                    Click="ResetFiltersButton_Click"/>
         </StackPanel>
 
         <!-- Список узлов с контекстным меню -->
@@ -43,21 +47,21 @@
             </ListBox.ContextMenu>
         </ListBox>
 
-        <!-- Правая колонка: свойства и кнопка -->
-        <Grid Grid.Row="1" Grid.Column="1">
+        <!-- Правая колонка: панель фильтров -->
+        <Grid Grid.Row="1" Grid.Column="1" Margin="10">
             <Grid.RowDefinitions>
                 <RowDefinition Height="*"/>
                 <RowDefinition Height="Auto"/>
             </Grid.RowDefinitions>
 
-            <ListBox x:Name="PropertiesListBox" 
-                     Grid.Row="0" 
-                     Margin="10"/>
+            <ScrollViewer Grid.Row="0">
+                <StackPanel x:Name="FilterPanel" Orientation="Vertical"/>
+            </ScrollViewer>
 
             <Button x:Name="AddPropertyButton" 
                     Grid.Row="1" 
                     Content="Добавить свойство" 
-                    Margin="10" 
+                    Margin="0,10,0,0" 
                     Click="AddPropertyButton_Click"/>
         </Grid>
     </Grid>
