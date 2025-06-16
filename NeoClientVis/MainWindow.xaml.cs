@@ -68,8 +68,8 @@ namespace NeoClientVis
                     string label = selectedNodeType.Label.Values.First();
                     var nodes = await BDController.LoadNodesByType(_client, label);
                     NodesListBox.ItemsSource = nodes.Select(n => $"Node: {string.Join(", ", n.Properties.Select(p =>
-                        p.Key == "Дата" && p.Value is DateTime date
-                            ? $"{p.Key}: {date:yyyy-MM-dd}"
+                        p.Key == "Дата" && p.Value is Neo4j.Driver.LocalDate localDate
+                            ? $"{p.Key}: {new DateTime(localDate.Year, localDate.Month, localDate.Day):yyyy-MM-dd}"
                             : $"{p.Key}: {p.Value}"))}");
 
                     // Создаём фильтры
@@ -90,6 +90,7 @@ namespace NeoClientVis
 
                 if (property.Value == typeof(bool))
                 {
+                    // Код для булевых свойств остается без изменений
                     var trueCheckBox = new CheckBox { Content = "Актуальные", Margin = new Thickness(0, 0, 10, 5), IsChecked = true };
                     var falseCheckBox = new CheckBox { Content = "Неактуальные", Margin = new Thickness(0, 0, 0, 5), IsChecked = true };
                     trueCheckBox.Checked += FilterControl_Changed;
@@ -103,20 +104,28 @@ namespace NeoClientVis
                     FilterPanel.Children.Add(label);
                     FilterPanel.Children.Add(boolPanel);
                 }
-                else if (property.Value == typeof(DateTime))
+                else if (property.Value == typeof(DateTime) || property.Value == typeof(Neo4j.Driver.LocalDate))
                 {
                     var fromLabel = new Label { Content = "От:", Margin = new Thickness(10, 0, 0, 0) };
-                    var fromTextBox = new TextBox { Width = 100, Margin = new Thickness(0, 0, 0, 5) };
+                    var fromDatePicker = new DatePicker { Width = 100, Margin = new Thickness(0, 0, 0, 5) };
                     var toLabel = new Label { Content = "До:", Margin = new Thickness(10, 0, 0, 0) };
-                    var toTextBox = new TextBox { Width = 100, Margin = new Thickness(0, 0, 0, 5) };
-                    fromTextBox.TextChanged += FilterControl_Changed;
-                    toTextBox.TextChanged += FilterControl_Changed;
-                    controls = new Control[] { fromTextBox, toTextBox };
+                    var toDatePicker = new DatePicker { Width = 100, Margin = new Thickness(0, 0, 0, 5) };
+                    fromDatePicker.SelectedDateChanged += (s, e) =>
+                    {
+                        if (fromDatePicker.SelectedDate.HasValue && toDatePicker.SelectedDate.HasValue &&
+                            fromDatePicker.SelectedDate > toDatePicker.SelectedDate)
+                        {
+                            MessageBox.Show("Дата 'От' не может быть позже даты 'До'.");
+                            fromDatePicker.SelectedDate = null;
+                        }
+                    };
+                    toDatePicker.SelectedDateChanged += FilterControl_Changed;
+                    controls = new Control[] { fromDatePicker, toDatePicker };
                     var datePanel = new StackPanel { Orientation = Orientation.Horizontal };
                     datePanel.Children.Add(fromLabel);
-                    datePanel.Children.Add(fromTextBox);
+                    datePanel.Children.Add(fromDatePicker);
                     datePanel.Children.Add(toLabel);
-                    datePanel.Children.Add(toTextBox);
+                    datePanel.Children.Add(toDatePicker);
                     FilterPanel.Children.Add(label);
                     FilterPanel.Children.Add(datePanel);
                 }
@@ -154,15 +163,16 @@ namespace NeoClientVis
                                 filters[kvp.Key] = false;
                             // Если обе или ни одна не выбраны, фильтр не применяется
                         }
-                        else if (selectedNodeType.Properties[kvp.Key] == typeof(DateTime))
+                        else if (selectedNodeType.Properties[kvp.Key] == typeof(DateTime) ||
+                                 selectedNodeType.Properties[kvp.Key] == typeof(Neo4j.Driver.LocalDate))
                         {
-                            var fromText = (kvp.Value[0] as TextBox)?.Text;
-                            var toText = (kvp.Value[1] as TextBox)?.Text;
-                            DateTime? fromDate = null, toDate = null;
-                            if (!string.IsNullOrWhiteSpace(fromText) && DateTime.TryParse(fromText, out var from))
-                                fromDate = from;
-                            if (!string.IsNullOrWhiteSpace(toText) && DateTime.TryParse(toText, out var to))
-                                toDate = to;
+                            var fromDate = (kvp.Value[0] as DatePicker)?.SelectedDate;
+                            var toDate = (kvp.Value[1] as DatePicker)?.SelectedDate;
+                            if (fromDate.HasValue && toDate.HasValue && fromDate > toDate)
+                            {
+                                MessageBox.Show("Дата 'От' не может быть позже даты 'До'.");
+                                return;
+                            }
                             if (fromDate.HasValue || toDate.HasValue)
                                 filters[kvp.Key] = new { From = fromDate, To = toDate };
                         }
@@ -177,8 +187,8 @@ namespace NeoClientVis
                     string label = selectedNodeType.Label.Values.First();
                     var nodes = await BDController.LoadFilteredNodes(_client, label, filters);
                     NodesListBox.ItemsSource = nodes.Select(n => $"Node: {string.Join(", ", n.Properties.Select(p =>
-                        p.Key == "Дата" && p.Value is DateTime date
-                            ? $"{p.Key}: {date:yyyy-MM-dd}"
+                        p.Key == "Дата" && p.Value is Neo4j.Driver.LocalDate localDate
+                            ? $"{p.Key}: {new DateTime(localDate.Year, localDate.Month, localDate.Day):yyyy-MM-dd}"
                             : $"{p.Key}: {p.Value}"))}");
                 }
             }
@@ -215,8 +225,8 @@ namespace NeoClientVis
 
                             var nodes = await BDController.LoadNodesByType(_client, label);
                             NodesListBox.ItemsSource = nodes.Select(n => $"Node: {string.Join(", ", n.Properties.Select(p =>
-                                p.Key == "Дата" && p.Value is DateTime date
-                                    ? $"{p.Key}: {date:yyyy-MM-dd}"
+                                p.Key == "Дата" && p.Value is Neo4j.Driver.LocalDate localDate
+                                    ? $"{p.Key}: {new DateTime(localDate.Year, localDate.Month, localDate.Day):yyyy-MM-dd}"
                                     : $"{p.Key}: {p.Value}"))}");
                         }
                         else
@@ -267,8 +277,8 @@ namespace NeoClientVis
 
                         var nodes = await BDController.LoadNodesByType(_client, label);
                         NodesListBox.ItemsSource = nodes.Select(n => $"Node: {string.Join(", ", n.Properties.Select(p =>
-                            p.Key == "Дата" && p.Value is DateTime date
-                                ? $"{p.Key}: {date:yyyy-MM-dd}"
+                            p.Key == "Дата" && p.Value is Neo4j.Driver.LocalDate localDate
+                                ? $"{p.Key}: {new DateTime(localDate.Year, localDate.Month, localDate.Day):yyyy-MM-dd}"
                                 : $"{p.Key}: {p.Value}"))}");
                     }
                 }
@@ -303,7 +313,10 @@ namespace NeoClientVis
                             await BDController.UpdateNodeProperties(_client, label, selectedNode.Properties, editNodeWindow.Properties);
 
                             nodes = await BDController.LoadNodesByType(_client, label);
-                            NodesListBox.ItemsSource = nodes.Select(n => $"Node: {string.Join(", ", n.Properties.Select(p => $"{p.Key}: {p.Value}"))}");
+                            NodesListBox.ItemsSource = nodes.Select(n => $"Node: {string.Join(", ", n.Properties.Select(p =>
+                                p.Key == "Дата" && p.Value is Neo4j.Driver.LocalDate localDate
+                                    ? $"{p.Key}: {new DateTime(localDate.Year, localDate.Month, localDate.Day):yyyy-MM-dd}"
+                                    : $"{p.Key}: {p.Value}"))}");
                         }
                     }
                 }
@@ -334,8 +347,8 @@ namespace NeoClientVis
                             await BDController.DeleteNode(_client, label, selectedNode.Properties);
                             nodes = await BDController.LoadNodesByType(_client, label);
                             NodesListBox.ItemsSource = nodes.Select(n => $"Node: {string.Join(", ", n.Properties.Select(p =>
-                                p.Key == "Дата" && p.Value is DateTime date
-                                    ? $"{p.Key}: {date:yyyy-MM-dd}"
+                                p.Key == "Дата" && p.Value is Neo4j.Driver.LocalDate localDate
+                                    ? $"{p.Key}: {new DateTime(localDate.Year, localDate.Month, localDate.Day):yyyy-MM-dd}"
                                     : $"{p.Key}: {p.Value}"))}");
                         }
                     }
@@ -356,10 +369,10 @@ namespace NeoClientVis
                     trueCheckBox.IsChecked = true;
                     (kvp.Value[1] as CheckBox).IsChecked = true;
                 }
-                else if (kvp.Value[0] is TextBox fromTextBox)
+                else if (kvp.Value[0] is DatePicker fromDatePicker)
                 {
-                    fromTextBox.Text = "";
-                    (kvp.Value[1] as TextBox).Text = "";
+                    fromDatePicker.SelectedDate = null;
+                    (kvp.Value[1] as DatePicker).SelectedDate = null;
                 }
                 else
                 {

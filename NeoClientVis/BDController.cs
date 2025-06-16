@@ -181,35 +181,64 @@ namespace NeoClientVis
         }
         public static async Task<List<NodeData>> LoadFilteredNodes(GraphClient client, string label, Dictionary<string, object> filters)
         {
+            // Начало запроса
             var query = client.Cypher.Match($"(n:{label})");
 
+            // Список условий и параметров
+            var conditions = new List<string>();
+            var parameters = new Dictionary<string, object>();
+
+            // Обработка фильтров
             foreach (var filter in filters)
             {
                 if (filter.Key == "Актуальность" && filter.Value is bool boolValue)
                 {
-                    query = query.Where($"n.{filter.Key} = $boolValue").WithParam("boolValue", boolValue);
+                    conditions.Add($"n.{filter.Key} = $boolValue");
+                    parameters["boolValue"] = boolValue;
                 }
-                else if (filter.Key == "Дата" && filter.Value is { } dateFilter)
+                else if (filter.Key == "Дата" && filter.Value is object dateFilter)
                 {
                     var from = dateFilter.GetType().GetProperty("From")?.GetValue(dateFilter) as DateTime?;
                     var to = dateFilter.GetType().GetProperty("To")?.GetValue(dateFilter) as DateTime?;
+
+                    var dateConditions = new List<string>();
                     if (from.HasValue)
-                        query = query.Where($"n.{filter.Key} >= $fromDate").WithParam("fromDate", from.Value);
+                    {
+                        dateConditions.Add($"n.{filter.Key} >= $fromDate");
+                        parameters["fromDate"] = new Neo4j.Driver.LocalDate(from.Value.Year, from.Value.Month, from.Value.Day);
+                    }
                     if (to.HasValue)
-                        query = query.Where($"n.{filter.Key} <= $toDate").WithParam("toDate", to.Value);
-                }
-                else if (filter.Value is string stringValue)
-                {
-                    query = query.Where($"n.{filter.Key} =~ '(?i).*' + $stringValue + '.*'")
-                                .WithParam("stringValue", stringValue);
+                    {
+                        dateConditions.Add($"n.{filter.Key} <= $toDate");
+                        parameters["toDate"] = new Neo4j.Driver.LocalDate(to.Value.Year, to.Value.Month, to.Value.Day);
+                    }
+
+                    if (dateConditions.Any())
+                    {
+                        conditions.Add($"n.{filter.Key} IS NOT NULL AND " + string.Join(" AND ", dateConditions));
+                    }
                 }
             }
 
+            // Объединение условий в одно WHERE
+            if (conditions.Any())
+            {
+                var combinedCondition = string.Join(" AND ", conditions);
+                query = query.Where(combinedCondition);
+            }
+
+            // Добавление параметров
+            foreach (var param in parameters)
+            {
+                query = query.WithParam(param.Key, param.Value);
+            }
+
+            // Выполнение запроса
             var result = await query
                 .Return(n => new NodeData { Properties = n.As<Dictionary<string, object>>() })
                 .ResultsAsync;
 
-            return result.ToList();
+            return result?.ToList() ?? new List<NodeData>();
         }
 
         public static async Task UpdateBoolProperties(GraphClient client, string label, string propertyName)
