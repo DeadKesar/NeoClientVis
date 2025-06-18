@@ -22,11 +22,17 @@ namespace NeoClientVis
             InitializeNeo4jClient();
             LoadDataAsync();
         }
+        /// <summary>
+        /// подключение к бд
+        /// </summary>
         private void InitializeNeo4jClient()
         {
             _client = new GraphClient(new Uri("http://localhost:7474"), "neo4j", "12345678a");
             _client.ConnectAsync().Wait(); // Синхронное подключение для простоты
         }
+        /// <summary>
+        /// выгрузка состояния из БД
+        /// </summary>
         private async void LoadDataAsync()
         {
             try
@@ -56,7 +62,11 @@ namespace NeoClientVis
                 MessageBox.Show($"Ошибка при загрузке данных: {ex.Message}");
             }
         }
-
+        /// <summary>
+        /// вывод основной инфы об избранном типе
+        /// </summary>
+        /// <param name="sender"></param>
+        /// <param name="e"></param>
         private async void NodeTypeComboBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
         {
             if (NodeTypeComboBox.SelectedItem is string selectedType)
@@ -70,14 +80,17 @@ namespace NeoClientVis
                     NodesListBox.ItemsSource = nodes.Select(n => $"Node: {string.Join(", ", n.Properties.Select(p =>
                         p.Key == "Дата" && p.Value is Neo4j.Driver.LocalDate localDate
                             ? $"{p.Key}: {new DateTime(localDate.Year, localDate.Month, localDate.Day):yyyy-MM-dd}"
-                            : $"{p.Key}: {p.Value}"))}");
+                            : $"{p.Key}: {p.Value}"))}");  //основной заполнитель объектов строками
 
                     // Создаём фильтры
                     CreateFilterControls(selectedNodeType.Properties);
                 }
             }
         }
-
+        /// <summary>
+        /// вывод всех свойств в окне свойств
+        /// </summary>
+        /// <param name="properties"> свойства которые есть у текущего типа</param>
         private void CreateFilterControls(Dictionary<string, Type> properties)
         {
             FilterPanel.Children.Clear();
@@ -90,7 +103,6 @@ namespace NeoClientVis
 
                 if (property.Value == typeof(bool))
                 {
-                    // Код для булевых свойств остается без изменений
                     var trueCheckBox = new CheckBox { Content = "Актуальные", Margin = new Thickness(0, 0, 10, 5), IsChecked = true };
                     var falseCheckBox = new CheckBox { Content = "Неактуальные", Margin = new Thickness(0, 0, 0, 5), IsChecked = true };
                     trueCheckBox.Checked += FilterControl_Changed;
@@ -142,7 +154,11 @@ namespace NeoClientVis
             }
         }
 
-
+        /// <summary>
+        /// следит за полями фильтров и применяет их изменения в выводе основных данных
+        /// </summary>
+        /// <param name="sender"></param>
+        /// <param name="e"></param>
         private async void FilterControl_Changed(object sender, RoutedEventArgs e)
         {
             if (NodeTypeComboBox.SelectedItem is string selectedType)
@@ -197,7 +213,11 @@ namespace NeoClientVis
 
 
 
-
+        /// <summary>
+        /// кнопка для добавления свойств к текущему типу (объект типа)
+        /// </summary>
+        /// <param name="sender"></param>
+        /// <param name="e"></param>
         private async void AddPropertyButton_Click(object sender, RoutedEventArgs e)
         {
             if (NodeTypeComboBox.SelectedItem is string selectedType)
@@ -237,7 +257,11 @@ namespace NeoClientVis
                 }
             }
         }
-
+        /// <summary>
+        /// создать объект нового типа
+        /// </summary>
+        /// <param name="sender"></param>
+        /// <param name="e"></param>
         private async void AddNodeTypeButton_Click(object sender, RoutedEventArgs e)
         {
             string newTypeName = Microsoft.VisualBasic.Interaction.InputBox(
@@ -260,7 +284,11 @@ namespace NeoClientVis
                 MessageBox.Show("Тип с таким названием уже существует!");
             }
         }
-
+        /// <summary>
+        /// добавление нового объекта текущего типа
+        /// </summary>
+        /// <param name="sender"></param>
+        /// <param name="e"></param>
         private async void AddNodeButton_Click(object sender, RoutedEventArgs e)
         {
             if (NodeTypeComboBox.SelectedItem is string selectedType)
@@ -291,7 +319,11 @@ namespace NeoClientVis
 
 
         
-        // Обработчики контекстного меню
+        /// <summary>
+        /// Обработчики контекстного меню, выподающее меню под левой кнопкой
+        /// </summary>
+        /// <param name="sender"></param>
+        /// <param name="e"></param>
         private async void PropertiesMenuItem_Click(object sender, RoutedEventArgs e)
         {
             if (NodesListBox.SelectedItem is string selectedNodeString)
@@ -322,7 +354,11 @@ namespace NeoClientVis
                 }
             }
         }
-
+        /// <summary>
+        /// кнопка удаления
+        /// </summary>
+        /// <param name="sender"></param>
+        /// <param name="e"></param>
         private async void DeleteMenuItem_Click(object sender, RoutedEventArgs e)
         {
             if (NodesListBox.SelectedItem is string selectedNodeString)
@@ -359,7 +395,11 @@ namespace NeoClientVis
                 MessageBox.Show("Выберите узел для удаления!");
             }
         }
-
+        /// <summary>
+        /// кнопка сброса фильтров
+        /// </summary>
+        /// <param name="sender"></param>
+        /// <param name="e"></param>
         private void ResetFiltersButton_Click(object sender, RoutedEventArgs e)
         {
             foreach (var kvp in _filterControls)

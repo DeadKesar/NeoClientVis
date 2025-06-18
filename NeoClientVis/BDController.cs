@@ -13,7 +13,12 @@ namespace NeoClientVis
     {
 
 
-        // Метод загрузки узлов по типу
+        /// <summary>
+        /// Метод загрузки узлов по типу
+        /// </summary>
+        /// <param name="client">клиент базы данных</param>
+        /// <param name="label">имя для вытаскивания из бд</param>
+        /// <returns></returns>
         public static async Task<List<NodeData>> LoadNodesByType(GraphClient client, string label)
         {
             var result = await client.Cypher
@@ -26,6 +31,13 @@ namespace NeoClientVis
 
             return result.ToList();
         }
+        /// <summary>
+        /// добавление пустых свойств к конкретному типу
+        /// </summary>
+        /// <param name="client">контролер базы данных</param>
+        /// <param name="label">имя типа с которым работаем</param>
+        /// <param name="newProperty">имя нового свойства</param>
+        /// <returns></returns>
         public static async Task UpdateNodesWithNewProperty(GraphClient client, string label, string newProperty)
         {
             await client.Cypher
@@ -33,7 +45,11 @@ namespace NeoClientVis
                 .Set($"n.{newProperty} = ''") // Добавляем новое свойство с пустым значением
                 .ExecuteWithoutResultsAsync();
         }
-        // Метод загрузки типов узлов из базы
+        /// <summary>
+        /// Метод загрузки типов узлов из базы
+        /// </summary>
+        /// <param name="client">клиент базы данны</param>
+        /// <returns></returns>
         public static async Task<NodeTypeCollection> LoadNodeTypesFromDb(GraphClient client)
         {
             var result = await client.Cypher
@@ -50,7 +66,12 @@ namespace NeoClientVis
         }
 
 
-        // Метод сохранения типов узлов в базу
+        /// <summary>
+        /// Метод сохранения типов узлов в базу
+        /// </summary>
+        /// <param name="client">клиент бд</param>
+        /// <param name="nodeTypes">имя нового типа</param>
+        /// <returns></returns>
         public static async Task SaveNodeTypesToDb(GraphClient client, NodeTypeCollection nodeTypes)
         {
             var json = JsonConvert.SerializeObject(nodeTypes, Formatting.Indented);
@@ -63,7 +84,14 @@ namespace NeoClientVis
                 .WithParam("json", json)
                 .ExecuteWithoutResultsAsync();
         }
-
+        /// <summary>
+        /// метод для добавление объекта в базу данных
+        /// </summary>
+        /// <param name="client"></param>
+        /// <param name="label">тип который добавляем</param>
+        /// <param name="properties">свойство</param>
+        /// <param name="propertyTypes">тип свойства</param>
+        /// <returns></returns>
         public static async Task AddNodeToDb(GraphClient client, string label, Dictionary<string, object> properties, Dictionary<string, Type> propertyTypes)
         {
             try
@@ -106,7 +134,18 @@ namespace NeoClientVis
             }
         }
 
-
+        /// <summary>
+        /// замена свойства
+        /// </summary>
+        /// <param name="client"></param>
+        /// <param name="label"></param>
+        /// <param name="oldProperties"></param>
+        /// <param name="newProperties"></param>
+        /// <param name="propertyTypes"></param>
+        /// <returns></returns>
+        /// <exception cref="ArgumentNullException"></exception>
+        /// <exception cref="ArgumentException"></exception>
+        /// <exception cref="Exception"></exception>
         public static async Task UpdateNodeProperties(GraphClient client, string label, Dictionary<string, object> oldProperties, Dictionary<string, object> newProperties, Dictionary<string, Type> propertyTypes = null)
         {
             if (client == null) throw new ArgumentNullException(nameof(client));
@@ -152,7 +191,13 @@ namespace NeoClientVis
                 throw new Exception($"Ошибка при обновлении свойств узла с меткой '{label}': {ex.Message}", ex);
             }
         }
-
+        /// <summary>
+        /// удаление ноды
+        /// </summary>
+        /// <param name="client"></param>
+        /// <param name="label"></param>
+        /// <param name="properties"></param>
+        /// <returns></returns>
         public static async Task DeleteNode(GraphClient client, string label, Dictionary<string, object> properties)
         {
             var matchProperties = string.Join(" AND ", properties.Select(p => $"n.{p.Key} = ${p.Key}"));
@@ -163,6 +208,14 @@ namespace NeoClientVis
                 .WithParams(properties.ToDictionary(p => p.Key, p => p.Value))
                 .ExecuteWithoutResultsAsync();
         }
+        /// <summary>
+        /// добавление свойства к существующей ноде
+        /// </summary>
+        /// <param name="client"></param>
+        /// <param name="label"></param>
+        /// <param name="newProperty"></param>
+        /// <param name="defaultValue"></param>
+        /// <returns></returns>
         public static async Task UpdateNodesWithNewProperty(GraphClient client, string label, string newProperty, object defaultValue)
         {
             await client.Cypher
@@ -171,6 +224,7 @@ namespace NeoClientVis
                 .WithParam("value", defaultValue)
                 .ExecuteWithoutResultsAsync();
         }
+
         public static async Task AddRelevanceToExistingNodes(GraphClient client, string label)
         {
             await client.Cypher
