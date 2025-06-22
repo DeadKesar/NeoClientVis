@@ -15,7 +15,7 @@ namespace NeoClientVis
         private GraphClient _client;
         private NodeTypeCollection _nodeTypeCollection;
         private Dictionary<string, Control[]> _filterControls;
-
+        private NodeData _selectedNodeForRelationship;
         public MainWindow()
         {
             InitializeComponent();
@@ -421,6 +421,43 @@ namespace NeoClientVis
             }
             FilterControl_Changed(sender, e);
         }
+
+        private void CreateRelationshipButton_Click(object sender, RoutedEventArgs e)
+        {
+            if (NodesListBox.SelectedItem is string selectedNodeString)
+            {
+                // Сохраняем выбранный узел для будущей связи
+                var selectedType = NodeTypeComboBox.SelectedItem as string;
+                var selectedNodeType = _nodeTypeCollection.NodeTypes.FirstOrDefault(nt => nt.Label.ContainsKey(selectedType));
+
+                if (selectedNodeType != null)
+                {
+                    string label = selectedNodeType.Label.Values.First();
+                    var node = BDController.GetNodeFromString(selectedNodeString, label);
+                    _selectedNodeForRelationship = node;
+
+                    // Открываем окно поиска
+                    var findWindow = new FindNodeWindow(_client, _nodeTypeCollection);
+                    findWindow.Owner = this;
+                    if (findWindow.ShowDialog() == true)
+                    {
+                        NodeData targetNode = findWindow.SelectedNode;
+                        if (targetNode != null)
+                        {
+                            // Создаем связь
+                            string relationshipType = "СВЯЗАН_С"; // Можно сделать выбор типа связи
+                            BDController.CreateRelationship(_client, _selectedNodeForRelationship, targetNode, relationshipType);
+                            MessageBox.Show("Связь успешно создана!");
+                        }
+                    }
+                }
+            }
+            else
+            {
+                MessageBox.Show("Выберите исходный документ для связи!");
+            }
+        }
+
 
         // Заглушки для остальных пунктов меню
         private void GoToMenuItem_Click(object sender, RoutedEventArgs e) { MessageBox.Show("Функция 'Перейти' пока не реализована."); }

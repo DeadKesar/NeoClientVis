@@ -21,15 +21,22 @@ namespace NeoClientVis
         /// <returns></returns>
         public static async Task<List<NodeData>> LoadNodesByType(GraphClient client, string label)
         {
-            var result = await client.Cypher
+            var query = client.Cypher
                 .Match($"(n:{label})")
-                .Return(n => new NodeData
-                {
-                    Properties = n.As<Dictionary<string, object>>()
-                })
-                .ResultsAsync;
+                .Return(n => n.As<Dictionary<string, object>>());
 
-            return result.ToList();
+            var results = (await query.ResultsAsync).ToList();
+            var nodes = new List<NodeData>();
+
+            foreach (var props in results)
+            {
+                nodes.Add(new NodeData
+                {
+                    Properties = props,
+                    DisplayString = GetNodeDisplayString(props)
+                });
+            }
+            return nodes;
         }
         /// <summary>
         /// добавление пустых свойств к конкретному типу
@@ -308,6 +315,106 @@ namespace NeoClientVis
                 .Where($"n.{propertyName} = 'False'")
                 .Set($"n.{propertyName} = false")
                 .ExecuteWithoutResultsAsync();
+        }
+
+        public static async Task<List<NodeData>> SearchNodes(GraphClient client, string label, string searchText)
+        {
+            var query = client.Cypher
+                .Match($"(n:{label})")
+                .Where($"ANY(prop IN keys(n) WHERE toString(n[prop]) CONTAINS $searchText")
+                .WithParam("searchText", searchText)
+                .Return(n => n.As<Dictionary<string, object>>());
+
+            var results = (await query.ResultsAsync).ToList();
+            var nodes = new List<NodeData>();
+
+            foreach (var props in results)
+            {
+                nodes.Add(new NodeData
+                {
+                    Properties = props,
+                    DisplayString = GetNodeDisplayString(props)
+                });
+            }
+            return nodes;
+        }
+
+        public static async Task CreateRelationship(
+            GraphClient client,
+            NodeData sourceNode,
+            NodeData targetNode,
+            string relationshipType)
+        {
+            string sourceLabel = sourceNode.Properties["Label"].ToString();
+            string targetLabel = targetNode.Properties["Label"].ToString();
+
+            await client.Cypher
+                .Match($"(a:{sourceLabel})", $"(b:{targetLabel})")
+                .Where((Dictionary<string, object> a) => a["Имя"] == sourceNode.Properties["Имя"])
+                .AndWhere((Dictionary<string, object> b) => b["Имя"] == targetNode.Properties["Имя"])
+                .Create("(a)-[r:" + relationshipType + "]->(b)")
+                .ExecuteWithoutResultsAsync();
+        }
+        public static NodeData GetNodeFromString(string nodeString, string label)
+        {
+            var properties = new Dictionary<string, object>();
+
+            try
+            {
+                // Удаляем префикс "Node:"
+                var content = nodeString.StartsWith("Node: ")
+                    ? nodeString.Substring(6)
+                    : nodeString;
+
+                // Разбиваем на пары ключ-значение
+                var pairs = content.Split(new[] { ", " }, StringSplitOptions.RemoveEmptyEntries);
+
+                foreach (var pair in pairs)
+                {
+                    var parts = pair.Split(new[] { ": " }, 2, StringSplitOptions.None);
+                    if (parts.Length == 2)
+                    {
+                        string key = parts[0].Trim();
+                        string value = parts[1].Trim();
+
+                        // Пытаемся определить тип
+                        if (DateTime.TryParse(value, out DateTime dateValue))
+                        {
+                            properties[key] = dateValue;
+                        }
+                        else if (bool.TryParse(value, out bool boolValue))
+                        {
+                            properties[key] = boolValue;
+                        }
+                        else
+                        {
+                            properties[key] = value;
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"Ошибка при разборе узла: {ex.Message}");
+            }
+
+            properties["Label"] = label;
+            return new NodeData
+            {
+                Properties = properties,
+                DisplayString = GetNodeDisplayString(properties)
+            };
+        }
+        public static string GetNodeDisplayString(Dictionary<string, object> properties)
+        {
+            return string.Join(", ", properties
+                .Where(p => p.Key != "Label")
+                .Select(p =>
+                {
+                    if (p.Value is Neo4j.Driver.LocalDate localDate)
+                        return $"{p.Key}: {new DateTime(localDate.Year, localDate.Month, localDate.Day):yyyy-MM-dd}";
+                    return $"{p.Key}: {p.Value}";
+                }));
         }
     }
 

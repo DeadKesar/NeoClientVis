@@ -29,6 +29,10 @@
                     Content="Сбросить фильтры" 
                     Margin="10,0,0,0" 
                     Click="ResetFiltersButton_Click"/>
+            <Button x:Name="CreateRelationshipButton" 
+                    Content="Создать связь" 
+                    Margin="10,0,0,0" 
+                    Click="CreateRelationshipButton_Click"/>
         </StackPanel>
 
         <!-- Список узлов с контекстным меню -->
