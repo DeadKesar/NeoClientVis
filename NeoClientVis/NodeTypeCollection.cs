@@ -1,25 +1,26 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
+﻿using Newtonsoft.Json;
 
 namespace NeoClientVis
 {
+    [JsonObject(MemberSerialization.OptIn)]
     public class NodeTypeCollection
     {
-        public int CreatedCount { get; private set; }
-        public List<NodeType> NodeTypes { get; set; }
+        [JsonProperty]
+        public int CreatedCount { get; set; }
+
+        [JsonProperty]
+        public List<NodeType> NodeTypes { get; set; } = new List<NodeType>();
 
         public NodeTypeCollection()
         {
             CreatedCount = 0;
-            NodeTypes = new List<NodeType>();
         }
 
-        public void AddNodeType(string labelKey, List<string>? properties = null)
+        public void AddNodeType(string labelKey)
         {
-            CreatedCount++;
+            // Генерируем уникальную метку
+            string labelValue = $"Label_{CreatedCount + 1}";
+
             var defaultProperties = new Dictionary<string, Type>
             {
                 { "Актуальность", typeof(bool) },
@@ -27,8 +28,32 @@ namespace NeoClientVis
                 { "Дата", typeof(Neo4j.Driver.LocalDate) },
                 { "Путь_к_файлу", typeof(string) }
             };
-            var newNodeType = new NodeType(labelKey, CreatedCount, defaultProperties);
+
+            var newNodeType = new NodeType
+            {
+                Label = new Dictionary<string, string> { { labelKey, labelValue } },
+                Properties = defaultProperties
+            };
+
             NodeTypes.Add(newNodeType);
+            CreatedCount++;
+        }
+
+        public void RecalculateCount()
+        {
+            int maxCount = 0;
+            foreach (var nodeType in NodeTypes)
+            {
+                if (nodeType.Label.Values.FirstOrDefault() is string labelValue)
+                {
+                    if (labelValue.StartsWith("Label_") &&
+                        int.TryParse(labelValue.Substring(6), out int count))
+                    {
+                        if (count > maxCount) maxCount = count;
+                    }
+                }
+            }
+            CreatedCount = maxCount;
         }
     }
 }

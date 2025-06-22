@@ -59,17 +59,39 @@ namespace NeoClientVis
         /// <returns></returns>
         public static async Task<NodeTypeCollection> LoadNodeTypesFromDb(GraphClient client)
         {
-            var result = await client.Cypher
-                .Match("(n:NodeTypes)")
-                .Return(n => n.As<Dictionary<string, object>>())
-                .ResultsAsync;
-
-            var json = result.FirstOrDefault()?["data"].ToString();
-            if (json != null)
+            try
             {
-                return JsonConvert.DeserializeObject<NodeTypeCollection>(json);
+                var query = client.Cypher
+                    .Match("(n:NodeTypeCollection)")
+                    .Return(n => n.As<Dictionary<string, object>>());
+
+                var result = (await query.ResultsAsync).FirstOrDefault();
+
+                if (result != null && result.TryGetValue("Data", out object dataObj))
+                {
+                    string json = dataObj.ToString();
+                    return JsonConvert.DeserializeObject<NodeTypeCollection>(
+                        json,
+                        new JsonSerializerSettings
+                        {
+                            TypeNameHandling = TypeNameHandling.Auto,
+                            Error = (sender, args) =>
+                            {
+                                args.ErrorContext.Handled = true;
+                                Console.WriteLine($"Ошибка десериализации: {args.ErrorContext.Error.Message}");
+                            }
+                        }
+                    );
+                }
             }
-            return new NodeTypeCollection(); // Пустая коллекция при отсутствии данных
+            catch (Exception ex)
+            {
+                MessageBox.Show($"Ошибка при загрузке типов узлов: {ex.Message}");
+                Console.WriteLine($"Ошибка при загрузке NodeTypeCollection: {ex}");
+            }
+
+            // Возвращаем новую коллекцию, если не удалось загрузить
+            return new NodeTypeCollection();
         }
 
 
@@ -79,17 +101,34 @@ namespace NeoClientVis
         /// <param name="client">клиент бд</param>
         /// <param name="nodeTypes">имя нового типа</param>
         /// <returns></returns>
-        public static async Task SaveNodeTypesToDb(GraphClient client, NodeTypeCollection nodeTypes)
+        public static async Task SaveNodeTypesToDb(GraphClient client, NodeTypeCollection nodeTypeCollection)
         {
-            var json = JsonConvert.SerializeObject(nodeTypes, Formatting.Indented);
-            await client.Cypher
-                .Merge("(n:NodeTypes)")
-                .OnCreate()
-                .Set("n.data = $json")
-                .OnMatch()
-                .Set("n.data = $json")
-                .WithParam("json", json)
-                .ExecuteWithoutResultsAsync();
+            try
+            {
+                // Сериализуем всю коллекцию в JSON
+                string json = JsonConvert.SerializeObject(nodeTypeCollection, Formatting.Indented, new JsonSerializerSettings
+                {
+                    TypeNameHandling = TypeNameHandling.Auto,
+                    ReferenceLoopHandling = ReferenceLoopHandling.Ignore
+                });
+
+                // Удаляем старый узел коллекции, если существует
+                await client.Cypher
+                    .Match("(n:NodeTypeCollection)")
+                    .Delete("n")
+                    .ExecuteWithoutResultsAsync();
+
+                // Создаем новый узел с сериализованной коллекцией
+                await client.Cypher
+                    .Create("(n:NodeTypeCollection {Data: $json})")
+                    .WithParam("json", json)
+                    .ExecuteWithoutResultsAsync();
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"Ошибка при сохранении типов узлов: {ex.Message}");
+                Console.WriteLine($"Ошибка при сохранении NodeTypeCollection: {ex}");
+            }
         }
         /// <summary>
         /// метод для добавление объекта в базу данных

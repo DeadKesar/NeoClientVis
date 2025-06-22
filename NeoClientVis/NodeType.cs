@@ -1,21 +1,28 @@
-﻿namespace NeoClientVis
-{
+﻿using Newtonsoft.Json;
 
+namespace NeoClientVis
+{
+    [JsonObject(MemberSerialization.OptIn)]
     public class NodeType
     {
-        public Dictionary<string, string> Label { get; set; }
-        public Dictionary<string, Type> Properties { get; set; } // Теперь храним типы данных
+        [JsonProperty]
+        public Dictionary<string, string> Label { get; set; } = new Dictionary<string, string>();
 
-        public NodeType()
-        {
-            Label = new Dictionary<string, string>();
-            Properties = new Dictionary<string, Type>();
-        }
+        [JsonIgnore]
+        public Dictionary<string, Type> Properties { get; set; } = new Dictionary<string, Type>();
 
-        public NodeType(string labelKey, int count, Dictionary<string, Type> properties)
+        // Свойство для сериализации типов
+        [JsonProperty("Properties")]
+        public Dictionary<string, string> PropertiesSerialized
         {
-            Label = new Dictionary<string, string> { { labelKey, $"Label_{count}" } };
-            Properties = properties;
+            get => Properties.ToDictionary(
+                kvp => kvp.Key,
+                kvp => kvp.Value.FullName
+            );
+            set => Properties = value.ToDictionary(
+                kvp => kvp.Key,
+                kvp => Type.GetType(kvp.Value) ?? typeof(string)
+            );
         }
     }
 }

@@ -16,6 +16,7 @@ namespace NeoClientVis
         private NodeTypeCollection _nodeTypeCollection;
         private Dictionary<string, Control[]> _filterControls;
         private NodeData _selectedNodeForRelationship;
+
         public MainWindow()
         {
             InitializeComponent();
@@ -40,6 +41,9 @@ namespace NeoClientVis
                 await _client.ConnectAsync();
                 _nodeTypeCollection = await BDController.LoadNodeTypesFromDb(_client);
 
+                // Пересчитываем счетчик на случай ручного изменения данных
+                _nodeTypeCollection.RecalculateCount();
+
                 foreach (var nodeType in _nodeTypeCollection.NodeTypes)
                 {
                     string label = nodeType.Label.Values.First();
@@ -60,6 +64,7 @@ namespace NeoClientVis
             catch (Exception ex)
             {
                 MessageBox.Show($"Ошибка при загрузке данных: {ex.Message}");
+                Console.WriteLine($"Ошибка в LoadDataAsync: {ex}");
             }
         }
         /// <summary>
@@ -270,18 +275,22 @@ namespace NeoClientVis
                 "",
                 -1, -1);
 
-            if (!string.IsNullOrWhiteSpace(newTypeName) && !_nodeTypeCollection.NodeTypes.Any(nt => nt.Label.ContainsKey(newTypeName)))
+            if (!string.IsNullOrWhiteSpace(newTypeName))
             {
-                _nodeTypeCollection.AddNodeType(newTypeName);
-                await BDController.SaveNodeTypesToDb(_client, _nodeTypeCollection);
+                // Проверяем уникальность по человекочитаемому имени
+                if (!_nodeTypeCollection.NodeTypes.Any(nt => nt.Label.ContainsKey(newTypeName)))
+                {
+                    _nodeTypeCollection.AddNodeType(newTypeName);
+                    await BDController.SaveNodeTypesToDb(_client, _nodeTypeCollection);
 
-                NodeTypeComboBox.ItemsSource = null;
-                NodeTypeComboBox.ItemsSource = _nodeTypeCollection.NodeTypes.Select(nt => nt.Label.First().Key);
-                NodeTypeComboBox.SelectedItem = newTypeName;
-            }
-            else if (_nodeTypeCollection.NodeTypes.Any(nt => nt.Label.ContainsKey(newTypeName)))
-            {
-                MessageBox.Show("Тип с таким названием уже существует!");
+                    NodeTypeComboBox.ItemsSource = null;
+                    NodeTypeComboBox.ItemsSource = _nodeTypeCollection.NodeTypes.Select(nt => nt.Label.First().Key);
+                    NodeTypeComboBox.SelectedItem = newTypeName;
+                }
+                else
+                {
+                    MessageBox.Show("Тип с таким названием уже существует!");
+                }
             }
         }
         /// <summary>
