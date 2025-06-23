@@ -16,7 +16,10 @@ namespace NeoClientVis
         private NodeTypeCollection _nodeTypeCollection;
         private Dictionary<string, Control[]> _filterControls;
         private NodeData _selectedNodeForRelationship;
-
+        private Stack<List<NodeData>> _navigationHistory = new Stack<List<NodeData>>();
+        private string _currentViewType; // "Type" или "Related"
+        private NodeData _currentContextNode; // Текущий контекстный узел
+        private List<NodeData> _currentNodes; // Текущий список узлов для отображения
         public MainWindow()
         {
             InitializeComponent();
@@ -74,6 +77,11 @@ namespace NeoClientVis
         /// <param name="e"></param>
         private async void NodeTypeComboBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
         {
+            _navigationHistory.Clear();
+            BackButton.Visibility = Visibility.Collapsed;
+            _currentViewType = "Type";
+            this.Title = "Neo4j Node Viewer";
+
             if (NodeTypeComboBox.SelectedItem is string selectedType)
             {
                 var selectedNodeType = _nodeTypeCollection.NodeTypes.FirstOrDefault(nt => nt.Label.ContainsKey(selectedType));
@@ -82,10 +90,8 @@ namespace NeoClientVis
                     // Загружаем все узлы без фильтров
                     string label = selectedNodeType.Label.Values.First();
                     var nodes = await BDController.LoadNodesByType(_client, label);
-                    NodesListBox.ItemsSource = nodes.Select(n => $"Node: {string.Join(", ", n.Properties.Select(p =>
-                        p.Key == "Дата" && p.Value is Neo4j.Driver.LocalDate localDate
-                            ? $"{p.Key}: {new DateTime(localDate.Year, localDate.Month, localDate.Day):yyyy-MM-dd}"
-                            : $"{p.Key}: {p.Value}"))}");  //основной заполнитель объектов строками
+                    _currentNodes = nodes;
+                    NodesListBox.ItemsSource = nodes.Select(n => $"Node: {n.DisplayString}");
 
                     // Создаём фильтры
                     CreateFilterControls(selectedNodeType.Properties);
@@ -327,7 +333,7 @@ namespace NeoClientVis
         }
 
 
-        
+
         /// <summary>
         /// Обработчики контекстного меню, выподающее меню под левой кнопкой
         /// </summary>
@@ -337,29 +343,81 @@ namespace NeoClientVis
         {
             if (NodesListBox.SelectedItem is string selectedNodeString)
             {
-                var selectedType = NodeTypeComboBox.SelectedItem as string;
-                var selectedNodeType = _nodeTypeCollection.NodeTypes.FirstOrDefault(nt => nt.Label.ContainsKey(selectedType));
-                if (selectedNodeType != null)
+                try
                 {
-                    string label = selectedNodeType.Label.Values.First();
-                    var nodes = await BDController.LoadNodesByType(_client, label);
-                    var selectedNode = nodes.FirstOrDefault(n => $"Node: {string.Join(", ", n.Properties.Select(p => $"{p.Key}: {p.Value}"))}" == selectedNodeString);
+                    NodeData selectedNode = null;
+                    Dictionary<string, Type> propertyTypes = null;
+                    string label = null;
 
-                    if (selectedNode != null)
+                    if (_currentViewType == "Type")
                     {
-                        var editNodeWindow = new EditNodeWindow(selectedNode.Properties, selectedNodeType.Properties);
-                        editNodeWindow.Owner = this;
-                        if (editNodeWindow.ShowDialog() == true)
-                        {
-                            await BDController.UpdateNodeProperties(_client, label, selectedNode.Properties, editNodeWindow.Properties);
+                        // Режим просмотра по типу
+                        var selectedType = NodeTypeComboBox.SelectedItem as string;
+                        var selectedNodeType = _nodeTypeCollection.NodeTypes
+                            .FirstOrDefault(nt => nt.Label.ContainsKey(selectedType));
 
-                            nodes = await BDController.LoadNodesByType(_client, label);
-                            NodesListBox.ItemsSource = nodes.Select(n => $"Node: {string.Join(", ", n.Properties.Select(p =>
-                                p.Key == "Дата" && p.Value is Neo4j.Driver.LocalDate localDate
-                                    ? $"{p.Key}: {new DateTime(localDate.Year, localDate.Month, localDate.Day):yyyy-MM-dd}"
-                                    : $"{p.Key}: {p.Value}"))}");
+                        if (selectedNodeType != null)
+                        {
+                            label = selectedNodeType.Label.Values.First();
+                            var nodes = await BDController.LoadNodesByType(_client, label);
+
+                            selectedNode = nodes.FirstOrDefault(n =>
+                                $"Node: {n.DisplayString}" == selectedNodeString);
+
+                            propertyTypes = selectedNodeType.Properties;
                         }
                     }
+                    else if (_currentViewType == "Related")
+                    {
+                        // Режим просмотра связанных узлов
+                        selectedNode = _currentNodes.FirstOrDefault(n =>
+                            $"Node: {n.DisplayString}" == selectedNodeString);
+
+                        if (selectedNode != null)
+                        {
+                            // Получаем метку узла из его свойств
+                            label = selectedNode.Properties.ContainsKey("Label")
+                                ? selectedNode.Properties["Label"].ToString()
+                                : "Unknown";
+
+                            // Находим соответствующий тип в коллекции
+                            var nodeType = _nodeTypeCollection.NodeTypes.FirstOrDefault(nt =>
+                                nt.Label.Values.Contains(label));
+
+                            propertyTypes = nodeType?.Properties ?? new Dictionary<string, Type>();
+                        }
+                    }
+
+                    if (selectedNode != null && propertyTypes != null && !string.IsNullOrEmpty(label))
+                    {
+                        var editNodeWindow = new EditNodeWindow(selectedNode.Properties, propertyTypes);
+                        editNodeWindow.Owner = this;
+
+                        if (editNodeWindow.ShowDialog() == true)
+                        {
+                            await BDController.UpdateNodeProperties(_client, label,
+                                selectedNode.Properties, editNodeWindow.Properties);
+
+                            // Обновляем текущий список в зависимости от режима
+                            if (_currentViewType == "Type")
+                            {
+                                var nodes = await BDController.LoadNodesByType(_client, label);
+                                _currentNodes = nodes;
+                                NodesListBox.ItemsSource = nodes.Select(n => $"Node: {n.DisplayString}");
+                            }
+                            else if (_currentViewType == "Related")
+                            {
+                                // Перезагружаем связанные узлы
+                                var relatedNodes = await BDController.LoadRelatedNodes(_client, _currentContextNode);
+                                _currentNodes = relatedNodes;
+                                NodesListBox.ItemsSource = relatedNodes.Select(n => $"Node: {n.DisplayString}");
+                            }
+                        }
+                    }
+                }
+                catch (Exception ex)
+                {
+                    MessageBox.Show($"Ошибка при редактировании узла: {ex.Message}");
                 }
             }
         }
@@ -372,31 +430,70 @@ namespace NeoClientVis
         {
             if (NodesListBox.SelectedItem is string selectedNodeString)
             {
-                var selectedType = NodeTypeComboBox.SelectedItem as string;
-                var selectedNodeType = _nodeTypeCollection.NodeTypes.FirstOrDefault(nt => nt.Label.ContainsKey(selectedType));
-                if (selectedNodeType != null)
+                try
                 {
-                    string label = selectedNodeType.Label.Values.First();
-                    var nodes = await BDController.LoadNodesByType(_client, label);
-                    var selectedNode = nodes.FirstOrDefault(n => $"Node: {string.Join(", ", n.Properties.Select(p =>
-                        p.Key == "Дата" && p.Value is DateTime date
-                            ? $"{p.Key}: {date:yyyy-MM-dd}"
-                            : $"{p.Key}: {p.Value}"))}" == selectedNodeString);
+                    NodeData selectedNode = null;
+                    string label = null;
 
-                    if (selectedNode != null)
+                    if (_currentViewType == "Type")
                     {
-                        var result = MessageBox.Show($"Вы уверены, что хотите удалить узел '{selectedNodeString}'?",
+                        // Режим просмотра по типу
+                        var selectedType = NodeTypeComboBox.SelectedItem as string;
+                        var selectedNodeType = _nodeTypeCollection.NodeTypes
+                            .FirstOrDefault(nt => nt.Label.ContainsKey(selectedType));
+
+                        if (selectedNodeType != null)
+                        {
+                            label = selectedNodeType.Label.Values.First();
+                            var nodes = await BDController.LoadNodesByType(_client, label);
+
+                            selectedNode = nodes.FirstOrDefault(n =>
+                                $"Node: {n.DisplayString}" == selectedNodeString);
+                        }
+                    }
+                    else if (_currentViewType == "Related")
+                    {
+                        // Режим просмотра связанных узлов
+                        selectedNode = _currentNodes.FirstOrDefault(n =>
+                            $"Node: {n.DisplayString}" == selectedNodeString);
+
+                        if (selectedNode != null)
+                        {
+                            label = selectedNode.Properties.ContainsKey("Label")
+                                ? selectedNode.Properties["Label"].ToString()
+                                : "Unknown";
+                        }
+                    }
+
+                    if (selectedNode != null && !string.IsNullOrEmpty(label))
+                    {
+                        var result = MessageBox.Show($"Вы уверены, что хотите удалить узел '{selectedNode.DisplayString}'?",
                             "Подтверждение удаления", MessageBoxButton.YesNo, MessageBoxImage.Warning);
+
                         if (result == MessageBoxResult.Yes)
                         {
                             await BDController.DeleteNode(_client, label, selectedNode.Properties);
-                            nodes = await BDController.LoadNodesByType(_client, label);
-                            NodesListBox.ItemsSource = nodes.Select(n => $"Node: {string.Join(", ", n.Properties.Select(p =>
-                                p.Key == "Дата" && p.Value is Neo4j.Driver.LocalDate localDate
-                                    ? $"{p.Key}: {new DateTime(localDate.Year, localDate.Month, localDate.Day):yyyy-MM-dd}"
-                                    : $"{p.Key}: {p.Value}"))}");
+
+                            // Обновляем текущий список в зависимости от режима
+                            if (_currentViewType == "Type")
+                            {
+                                var nodes = await BDController.LoadNodesByType(_client, label);
+                                _currentNodes = nodes;
+                                NodesListBox.ItemsSource = nodes.Select(n => $"Node: {n.DisplayString}");
+                            }
+                            else if (_currentViewType == "Related")
+                            {
+                                // Перезагружаем связанные узлы
+                                var relatedNodes = await BDController.LoadRelatedNodes(_client, _currentContextNode);
+                                _currentNodes = relatedNodes;
+                                NodesListBox.ItemsSource = relatedNodes.Select(n => $"Node: {n.DisplayString}");
+                            }
                         }
                     }
+                }
+                catch (Exception ex)
+                {
+                    MessageBox.Show($"Ошибка при удалении узла: {ex.Message}");
                 }
             }
             else
@@ -404,6 +501,8 @@ namespace NeoClientVis
                 MessageBox.Show("Выберите узел для удаления!");
             }
         }
+        
+        
         /// <summary>
         /// кнопка сброса фильтров
         /// </summary>
@@ -490,7 +589,66 @@ namespace NeoClientVis
 
         // Заглушки для остальных пунктов меню
         private void GoToMenuItem_Click(object sender, RoutedEventArgs e) { MessageBox.Show("Функция 'Перейти' пока не реализована."); }
-        private void RelatedMenuItem_Click(object sender, RoutedEventArgs e) { MessageBox.Show("Функция 'Связанные' пока не реализована."); }
+        private async void RelatedMenuItem_Click(object sender, RoutedEventArgs e)
+        {
+            if (NodesListBox.SelectedItem is string selectedNodeString)
+            {
+                var selectedType = NodeTypeComboBox.SelectedItem as string;
+                var selectedNodeType = _nodeTypeCollection.NodeTypes.FirstOrDefault(nt => nt.Label.ContainsKey(selectedType));
+
+                if (selectedNodeType != null)
+                {
+                    string label = selectedNodeType.Label.Values.First();
+                    var nodes = await BDController.LoadNodesByType(_client, label);
+
+                    var selectedNode = nodes.FirstOrDefault(n =>
+                        $"Node: {n.DisplayString}" == selectedNodeString);
+
+                    if (selectedNode != null)
+                    {
+                        try
+                        {
+                            // Сохраняем текущий вид
+                            _navigationHistory.Push(nodes.ToList());
+
+                            // Загружаем связанные узлы
+                            var relatedNodes = await BDController.LoadRelatedNodes(_client, selectedNode);
+                            _currentNodes = relatedNodes; // Сохраняем текущий список
+                            NodesListBox.ItemsSource = relatedNodes.Select(n => $"Node: {n.DisplayString}");
+
+                            // Обновляем состояние
+                            _currentViewType = "Related";
+                            _currentContextNode = selectedNode;
+
+                            // Показываем кнопку "Назад"
+                            BackButton.Visibility = Visibility.Visible;
+
+                            // Обновляем заголовок
+                            this.Title = $"Связанные с: {selectedNode.DisplayString}";
+                        }
+                        catch (Exception ex)
+                        {
+                            MessageBox.Show($"Ошибка при загрузке связанных узлов: {ex.Message}");
+                        }
+                    }
+                }
+            }
+        }
+        private void BackButton_Click(object sender, RoutedEventArgs e)
+        {
+            if (_navigationHistory.Count > 0)
+            {
+                var previousNodes = _navigationHistory.Pop();
+                NodesListBox.ItemsSource = previousNodes.Select(n => $"Node: {n.DisplayString}");
+
+                if (_navigationHistory.Count == 0)
+                {
+                    BackButton.Visibility = Visibility.Collapsed;
+                    _currentViewType = "Type";
+                    this.Title = "Neo4j Node Viewer";
+                }
+            }
+        }
         private void AddMenuItem_Click(object sender, RoutedEventArgs e) { MessageBox.Show("Функция 'Добавить' пока не реализована."); }
         private void ReplaceMenuItem_Click(object sender, RoutedEventArgs e) { MessageBox.Show("Функция 'Заменить' пока не реализована."); }
     }

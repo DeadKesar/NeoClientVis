@@ -472,6 +472,37 @@ namespace NeoClientVis
                     return $"{p.Key}: {p.Value}";
                 }));
         }
+
+        public static async Task<List<NodeData>> LoadRelatedNodes(
+            GraphClient client,
+            NodeData sourceNode)
+        {
+            long nodeId = (long)sourceNode.Properties["Id"];
+
+            var query = client.Cypher
+                .Match($"(a)-[r]-(b)")
+                .Where("id(a) = $nodeId")
+                .WithParam("nodeId", nodeId)
+                .ReturnDistinct(b => new
+                {
+                    Properties = b.As<Dictionary<string, object>>(),
+                    Id = b.Id(),
+                    Labels = b.Labels()
+                });
+
+            var results = await query.ResultsAsync;
+            return results.Select(item =>
+            {
+                item.Properties["Id"] = item.Id;
+                // Используем первую метку как тип узла
+                item.Properties["Label"] = item.Labels.FirstOrDefault() ?? "Unknown";
+                return new NodeData
+                {
+                    Properties = item.Properties,
+                    DisplayString = GetNodeDisplayString(item.Properties)
+                };
+            }).ToList();
+        }
     }
 
 }
