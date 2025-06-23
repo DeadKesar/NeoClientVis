@@ -431,19 +431,29 @@ namespace NeoClientVis
             FilterControl_Changed(sender, e);
         }
 
-        private void CreateRelationshipButton_Click(object sender, RoutedEventArgs e)
+        private async void CreateRelationshipButton_Click(object sender, RoutedEventArgs e)
         {
             if (NodesListBox.SelectedItem is string selectedNodeString)
             {
-                // Сохраняем выбранный узел для будущей связи
                 var selectedType = NodeTypeComboBox.SelectedItem as string;
                 var selectedNodeType = _nodeTypeCollection.NodeTypes.FirstOrDefault(nt => nt.Label.ContainsKey(selectedType));
 
                 if (selectedNodeType != null)
                 {
                     string label = selectedNodeType.Label.Values.First();
-                    var node = BDController.GetNodeFromString(selectedNodeString, label);
-                    _selectedNodeForRelationship = node;
+
+                    // Добавляем async/await
+                    var nodes = await BDController.LoadNodesByType(_client, label);
+
+                    // Теперь nodes - List<NodeData>, а не Task<List<NodeData>>
+                    _selectedNodeForRelationship = nodes.FirstOrDefault(n =>
+                        "Node: " + n.DisplayString == selectedNodeString);
+
+                    if (_selectedNodeForRelationship == null)
+                    {
+                        MessageBox.Show("Не удалось найти выбранный узел в базе данных.");
+                        return;
+                    }
 
                     // Открываем окно поиска
                     var findWindow = new FindNodeWindow(_client, _nodeTypeCollection);
@@ -453,10 +463,20 @@ namespace NeoClientVis
                         NodeData targetNode = findWindow.SelectedNode;
                         if (targetNode != null)
                         {
-                            // Создаем связь
-                            string relationshipType = "СВЯЗАН_С"; // Можно сделать выбор типа связи
-                            BDController.CreateRelationship(_client, _selectedNodeForRelationship, targetNode, relationshipType);
-                            MessageBox.Show("Связь успешно создана!");
+                            try
+                            {
+                                // Создаем связь
+                                string relationshipType = "СВЯЗАН_С";
+                                await BDController.CreateRelationship(_client, _selectedNodeForRelationship, targetNode, relationshipType);
+                                MessageBox.Show("Связь успешно создана!");
+
+                                // Обновляем данные
+                                NodeTypeComboBox_SelectionChanged(null, null);
+                            }
+                            catch (Exception ex)
+                            {
+                                MessageBox.Show($"Ошибка при создании связи: {ex.Message}");
+                            }
                         }
                     }
                 }

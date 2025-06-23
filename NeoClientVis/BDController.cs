@@ -23,20 +23,22 @@ namespace NeoClientVis
         {
             var query = client.Cypher
                 .Match($"(n:{label})")
-                .Return(n => n.As<Dictionary<string, object>>());
-
-            var results = (await query.ResultsAsync).ToList();
-            var nodes = new List<NodeData>();
-
-            foreach (var props in results)
-            {
-                nodes.Add(new NodeData
+                .Return(n => new
                 {
-                    Properties = props,
-                    DisplayString = GetNodeDisplayString(props)
+                    Properties = n.As<Dictionary<string, object>>(),
+                    Id = n.Id() // Добавляем ID узла
                 });
-            }
-            return nodes;
+
+            var results = await query.ResultsAsync;
+            return results.Select(item =>
+            {
+                item.Properties["Id"] = item.Id; // Сохраняем ID в свойства
+                return new NodeData
+                {
+                    Properties = item.Properties,
+                    DisplayString = GetNodeDisplayString(item.Properties)
+                };
+            }).ToList();
         }
         /// <summary>
         /// добавление пустых свойств к конкретному типу
@@ -384,14 +386,29 @@ namespace NeoClientVis
             NodeData targetNode,
             string relationshipType)
         {
-            string sourceLabel = sourceNode.Properties["Label"].ToString();
-            string targetLabel = targetNode.Properties["Label"].ToString();
+            long sourceId = (long)sourceNode.Properties["Id"];
+            long targetId = (long)targetNode.Properties["Id"];
 
+            // Проверяем, существует ли уже связь
+            var exists = await client.Cypher
+                .Match($"(a)-[r:{relationshipType}]->(b)")
+                .Where("id(a) = $sourceId AND id(b) = $targetId")
+                .WithParams(new { sourceId, targetId })
+                .Return(r => r.Count())
+                .ResultsAsync;
+
+            if (exists.Single() > 0)
+            {
+                throw new Exception("Связь уже существует!");
+            }
+
+            // Создаем связь
             await client.Cypher
-                .Match($"(a:{sourceLabel})", $"(b:{targetLabel})")
-                .Where((Dictionary<string, object> a) => a["Имя"] == sourceNode.Properties["Имя"])
-                .AndWhere((Dictionary<string, object> b) => b["Имя"] == targetNode.Properties["Имя"])
-                .Create("(a)-[r:" + relationshipType + "]->(b)")
+                .Match("(a)", "(b)")
+                .Where("id(a) = $sourceId")
+                .AndWhere("id(b) = $targetId")
+                .Create($"(a)-[:{relationshipType}]->(b)")
+                .WithParams(new { sourceId, targetId })
                 .ExecuteWithoutResultsAsync();
         }
         public static NodeData GetNodeFromString(string nodeString, string label)
