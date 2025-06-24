@@ -622,7 +622,7 @@ namespace NeoClientVis
 
 
         // Заглушки для остальных пунктов меню
-        private void GoToMenuItem_Click(object sender, RoutedEventArgs e) { MessageBox.Show("Функция 'Перейти' пока не реализована."); }
+        
         private async void RelatedMenuItem_Click(object sender, RoutedEventArgs e)
         {
             if (NodesListBox.SelectedItem is string selectedNodeString)
@@ -681,6 +681,82 @@ namespace NeoClientVis
                     _currentViewType = "Type";
                     this.Title = "Neo4j Node Viewer";
                 }
+            }
+        }
+        private async void GoToMenuItem_Click(object sender, RoutedEventArgs e)
+        {
+            if (NodesListBox.SelectedItem is string selectedNodeString)
+            {
+                try
+                {
+                    NodeData selectedNode = null;
+                    string label = null;
+
+                    if (_currentViewType == "Type")
+                    {
+                        var selectedType = NodeTypeComboBox.SelectedItem as string;
+                        var selectedNodeType = _nodeTypeCollection.NodeTypes
+                            .FirstOrDefault(nt => nt.Label.ContainsKey(selectedType));
+
+                        if (selectedNodeType != null)
+                        {
+                            label = selectedNodeType.Label.Values.First();
+                            var nodes = await BDController.LoadNodesByType(_client, label);
+                            selectedNode = nodes.FirstOrDefault(n =>
+                                $"Node: {n.DisplayString}" == selectedNodeString);
+                        }
+                    }
+                    else if (_currentViewType == "Related")
+                    {
+                        selectedNode = _currentNodes.FirstOrDefault(n =>
+                            $"Node: {n.DisplayString}" == selectedNodeString);
+
+                        if (selectedNode != null)
+                        {
+                            label = selectedNode.Properties.ContainsKey("Label")
+                                ? selectedNode.Properties["Label"].ToString()
+                                : "Unknown";
+                        }
+                    }
+
+                    if (selectedNode != null && selectedNode.Properties.ContainsKey("Путь_к_файлу"))
+                    {
+                        string filePath = selectedNode.Properties["Путь_к_файлу"]?.ToString();
+                        if (string.IsNullOrWhiteSpace(filePath))
+                        {
+                            MessageBox.Show("Путь к файлу не указан!");
+                            return;
+                        }
+
+                        if (!System.IO.File.Exists(filePath))
+                        {
+                            MessageBox.Show("Файл не найден по указанному пути!");
+                            return;
+                        }
+
+                        try
+                        {
+                            string argument = $"/select, \"{filePath}\"";
+                            System.Diagnostics.Process.Start("explorer.exe", argument);
+                        }
+                        catch (Exception ex)
+                        {
+                            MessageBox.Show($"Ошибка при открытии проводника: {ex.Message}");
+                        }
+                    }
+                    else
+                    {
+                        MessageBox.Show("У выбранного узла отсутствует свойство 'Путь_к_файлу'!");
+                    }
+                }
+                catch (Exception ex)
+                {
+                    MessageBox.Show($"Ошибка при обработке узла: {ex.Message}");
+                }
+            }
+            else
+            {
+                MessageBox.Show("Выберите узел для перехода!");
             }
         }
         private void AddMenuItem_Click(object sender, RoutedEventArgs e) { MessageBox.Show("Функция 'Добавить' пока не реализована."); }
