@@ -24,13 +24,60 @@ namespace NeoClientVis
                 var label = new Label { Content = $"{property.Key}:" };
                 Control inputControl;
 
-                if (property.Value == typeof(bool))
+                if (property.Key == "Путь_к_файлу")
+                {
+                    // Создаём TextBox для пути к файлу
+                    var textBox = new TextBox
+                    {
+                        Width = 150,
+                        Margin = new Thickness(0, 0, 5, 5)
+                    };
+
+                    // Создаём кнопку для вызова проводника
+                    var button = new Button
+                    {
+                        Content = "...",
+                        Width = 30
+                    };
+
+                    // Обработчик события нажатия кнопки
+                    button.Click += (s, e) =>
+                    {
+                        var dialog = new Microsoft.Win32.OpenFileDialog
+                        {
+                            Title = "Выберите файл",
+                            Filter = "Все файлы (*.*)|*.*" // Можно настроить фильтр под нужные типы файлов
+                        };
+                        if (dialog.ShowDialog() == true)
+                        {
+                            textBox.Text = dialog.FileName;
+                        }
+                    };
+
+                    // Помещаем TextBox и кнопку в горизонтальный StackPanel
+                    var panel = new StackPanel
+                    {
+                        Orientation = Orientation.Horizontal
+                    };
+                    panel.Children.Add(textBox);
+                    panel.Children.Add(button);
+
+                    // Сохраняем TextBox как основной элемент управления для получения значения
+                    inputControl = textBox;
+
+                    // Добавляем метку и панель в интерфейс
+                    PropertiesPanel.Children.Add(label);
+                    PropertiesPanel.Children.Add(panel);
+                }
+                else if (property.Value == typeof(bool))
                 {
                     inputControl = new CheckBox
                     {
                         IsChecked = true, // Значение по умолчанию
                         Margin = new Thickness(0, 0, 0, 5)
                     };
+                    PropertiesPanel.Children.Add(label);
+                    PropertiesPanel.Children.Add(inputControl);
                 }
                 else
                 {
@@ -40,11 +87,11 @@ namespace NeoClientVis
                         Margin = new Thickness(0, 0, 0, 5),
                         Text = property.Value == typeof(DateTime) ? DateTime.Now.ToString("yyyy-MM-dd") : ""
                     };
+                    PropertiesPanel.Children.Add(label);
+                    PropertiesPanel.Children.Add(inputControl);
                 }
 
                 _propertyInputs[property.Key] = inputControl;
-                PropertiesPanel.Children.Add(label);
-                PropertiesPanel.Children.Add(inputControl);
             }
         }
 
