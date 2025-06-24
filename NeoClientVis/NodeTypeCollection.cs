@@ -11,6 +11,16 @@ namespace NeoClientVis
         [JsonProperty]
         public List<NodeType> NodeTypes { get; set; } = new List<NodeType>();
 
+        // Добавим конструктор для корректной десериализации
+        [JsonConstructor]
+        public NodeTypeCollection(
+            int CreatedCount,
+            List<NodeType> NodeTypes)
+        {
+            this.CreatedCount = CreatedCount;
+            this.NodeTypes = NodeTypes ?? new List<NodeType>();
+        }
+
         public NodeTypeCollection()
         {
             CreatedCount = 0;
@@ -22,12 +32,12 @@ namespace NeoClientVis
             string labelValue = $"Label_{CreatedCount + 1}";
 
             var defaultProperties = new Dictionary<string, Type>
-            {
-                { "Актуальность", typeof(bool) },
-                { "Имя", typeof(string) },
-                { "Дата", typeof(Neo4j.Driver.LocalDate) },
-                { "Путь_к_файлу", typeof(string) }
-            };
+                {
+                    { "Актуальность", typeof(bool) },
+                    { "Имя", typeof(string) },
+                    { "Дата", typeof(Neo4j.Driver.LocalDate) },
+                    { "Путь_к_файлу", typeof(string) }
+                };
 
             var newNodeType = new NodeType
             {

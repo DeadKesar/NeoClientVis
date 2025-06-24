@@ -57,6 +57,23 @@ namespace NeoClientVis
                 if (_nodeTypeCollection.NodeTypes.Count > 0)
                 {
                     NodeTypeComboBox.SelectedIndex = 0;
+
+                    // Добавляем вызов создания фильтров для выбранного типа
+                    var selectedType = NodeTypeComboBox.SelectedItem as string;
+                    var selectedNodeType = _nodeTypeCollection.NodeTypes
+                        .FirstOrDefault(nt => nt.Label.ContainsKey(selectedType));
+
+                    if (selectedNodeType != null)
+                    {
+                        // Создаём фильтры для начального типа
+                        CreateFilterControls(selectedNodeType.Properties);
+
+                        // Загружаем узлы для начального типа
+                        string label = selectedNodeType.Label.Values.First();
+                        var nodes = await BDController.LoadNodesByType(_client, label);
+                        _currentNodes = nodes;
+                        NodesListBox.ItemsSource = nodes.Select(n => $"Node: {n.DisplayString}");
+                    }
                 }
                 else
                 {
@@ -105,7 +122,16 @@ namespace NeoClientVis
         private void CreateFilterControls(Dictionary<string, Type> properties)
         {
             FilterPanel.Children.Clear();
+
+            // Проверка на null
+            if (properties == null)
+            {
+                MessageBox.Show("Ошибка: свойства типа не загружены");
+                return;
+            }
+
             _filterControls = new Dictionary<string, Control[]>();
+
 
             foreach (var property in properties)
             {
@@ -152,7 +178,7 @@ namespace NeoClientVis
                     FilterPanel.Children.Add(label);
                     FilterPanel.Children.Add(datePanel);
                 }
-                else // string
+                else // string и другие типы
                 {
                     var textBox = new TextBox { Width = 200, Margin = new Thickness(0, 0, 0, 5) };
                     textBox.TextChanged += FilterControl_Changed;
@@ -188,7 +214,6 @@ namespace NeoClientVis
                                 filters[kvp.Key] = true;
                             else if (!trueCheck && falseCheck)
                                 filters[kvp.Key] = false;
-                            // Если обе или ни одна не выбраны, фильтр не применяется
                         }
                         else if (selectedNodeType.Properties[kvp.Key] == typeof(DateTime) ||
                                  selectedNodeType.Properties[kvp.Key] == typeof(Neo4j.Driver.LocalDate))
@@ -203,7 +228,7 @@ namespace NeoClientVis
                             if (fromDate.HasValue || toDate.HasValue)
                                 filters[kvp.Key] = new { From = fromDate, To = toDate };
                         }
-                        else // string
+                        else
                         {
                             var text = (kvp.Value[0] as TextBox)?.Text;
                             if (!string.IsNullOrWhiteSpace(text))
@@ -213,10 +238,10 @@ namespace NeoClientVis
 
                     string label = selectedNodeType.Label.Values.First();
                     var nodes = await BDController.LoadFilteredNodes(_client, label, filters);
-                    NodesListBox.ItemsSource = nodes.Select(n => $"Node: {string.Join(", ", n.Properties.Select(p =>
-                        p.Key == "Дата" && p.Value is Neo4j.Driver.LocalDate localDate
-                            ? $"{p.Key}: {new DateTime(localDate.Year, localDate.Month, localDate.Day):yyyy-MM-dd}"
-                            : $"{p.Key}: {p.Value}"))}");
+
+                    // Используем DisplayString вместо ручного форматирования
+                    _currentNodes = nodes;
+                    NodesListBox.ItemsSource = nodes.Select(n => $"Node: {n.DisplayString}");
                 }
             }
         }
@@ -255,10 +280,7 @@ namespace NeoClientVis
                             CreateFilterControls(selectedNodeType.Properties);
 
                             var nodes = await BDController.LoadNodesByType(_client, label);
-                            NodesListBox.ItemsSource = nodes.Select(n => $"Node: {string.Join(", ", n.Properties.Select(p =>
-                                p.Key == "Дата" && p.Value is Neo4j.Driver.LocalDate localDate
-                                    ? $"{p.Key}: {new DateTime(localDate.Year, localDate.Month, localDate.Day):yyyy-MM-dd}"
-                                    : $"{p.Key}: {p.Value}"))}");
+                            NodesListBox.ItemsSource = nodes.Select(n => $"Node: {n.DisplayString}");
                         }
                         else
                         {
@@ -283,15 +305,30 @@ namespace NeoClientVis
 
             if (!string.IsNullOrWhiteSpace(newTypeName))
             {
-                // Проверяем уникальность по человекочитаемому имени
                 if (!_nodeTypeCollection.NodeTypes.Any(nt => nt.Label.ContainsKey(newTypeName)))
                 {
                     _nodeTypeCollection.AddNodeType(newTypeName);
                     await BDController.SaveNodeTypesToDb(_client, _nodeTypeCollection);
 
-                    NodeTypeComboBox.ItemsSource = null;
-                    NodeTypeComboBox.ItemsSource = _nodeTypeCollection.NodeTypes.Select(nt => nt.Label.First().Key);
+                    // Принудительно обновляем источник данных комбобокса
+                    var types = _nodeTypeCollection.NodeTypes.Select(nt => nt.Label.First().Key).ToList();
+                    NodeTypeComboBox.ItemsSource = types;
                     NodeTypeComboBox.SelectedItem = newTypeName;
+
+                    // Явно обновляем фильтры
+                    var selectedNodeType = _nodeTypeCollection.NodeTypes
+                        .FirstOrDefault(nt => nt.Label.ContainsKey(newTypeName));
+
+                    if (selectedNodeType != null)
+                    {
+                        CreateFilterControls(selectedNodeType.Properties);
+
+                        // Загружаем узлы для нового типа
+                        string label = selectedNodeType.Label.Values.First();
+                        var nodes = await BDController.LoadNodesByType(_client, label);
+                        _currentNodes = nodes;
+                        NodesListBox.ItemsSource = nodes.Select(n => $"Node: {n.DisplayString}");
+                    }
                 }
                 else
                 {
@@ -319,10 +356,7 @@ namespace NeoClientVis
                         await BDController.AddNodeToDb(_client, label, addNodeWindow.Properties, selectedNodeType.Properties);
 
                         var nodes = await BDController.LoadNodesByType(_client, label);
-                        NodesListBox.ItemsSource = nodes.Select(n => $"Node: {string.Join(", ", n.Properties.Select(p =>
-                            p.Key == "Дата" && p.Value is Neo4j.Driver.LocalDate localDate
-                                ? $"{p.Key}: {new DateTime(localDate.Year, localDate.Month, localDate.Day):yyyy-MM-dd}"
-                                : $"{p.Key}: {p.Value}"))}");
+                        NodesListBox.ItemsSource = nodes.Select(n => $"Node: {n.DisplayString}");
                     }
                 }
             }
@@ -547,7 +581,7 @@ namespace NeoClientVis
                     // Теперь nodes - List<NodeData>, а не Task<List<NodeData>>
                     _selectedNodeForRelationship = nodes.FirstOrDefault(n =>
                         "Node: " + n.DisplayString == selectedNodeString);
-
+                    _currentNodes = nodes;
                     if (_selectedNodeForRelationship == null)
                     {
                         MessageBox.Show("Не удалось найти выбранный узел в базе данных.");

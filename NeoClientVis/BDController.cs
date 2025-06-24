@@ -72,9 +72,14 @@ namespace NeoClientVis
                 if (result != null && result.TryGetValue("Data", out object dataObj))
                 {
                     string json = dataObj.ToString();
-                    return JsonConvert.DeserializeObject<NodeTypeCollection>(
-                        json,
-                        new JsonSerializerSettings
+
+                    // Добавим логгирование для отладки
+                    Console.WriteLine($"Загруженные данные NodeTypeCollection:");
+                    Console.WriteLine(json);
+
+                    try
+                    {
+                        var settings = new JsonSerializerSettings
                         {
                             TypeNameHandling = TypeNameHandling.Auto,
                             Error = (sender, args) =>
@@ -82,8 +87,15 @@ namespace NeoClientVis
                                 args.ErrorContext.Handled = true;
                                 Console.WriteLine($"Ошибка десериализации: {args.ErrorContext.Error.Message}");
                             }
-                        }
-                    );
+                        };
+
+                        return JsonConvert.DeserializeObject<NodeTypeCollection>(json, settings);
+                    }
+                    catch (Exception ex)
+                    {
+                        Console.WriteLine($"Ошибка при десериализации: {ex}");
+                        MessageBox.Show($"Ошибка при загрузке типов узлов: {ex.Message}");
+                    }
                 }
             }
             catch (Exception ex)
@@ -92,7 +104,6 @@ namespace NeoClientVis
                 Console.WriteLine($"Ошибка при загрузке NodeTypeCollection: {ex}");
             }
 
-            // Возвращаем новую коллекцию, если не удалось загрузить
             return new NodeTypeCollection();
         }
 
@@ -320,6 +331,11 @@ namespace NeoClientVis
                         conditions.Add($"n.{filter.Key} IS NOT NULL AND " + string.Join(" AND ", dateConditions));
                     }
                 }
+                else if (filter.Value is string stringValue) // Обработка строковых фильтров
+                {
+                    conditions.Add($"n.{filter.Key} CONTAINS $str_{filter.Key}");
+                    parameters[$"str_{filter.Key}"] = stringValue;
+                }
             }
 
             // Объединение условий в одно WHERE
@@ -335,12 +351,25 @@ namespace NeoClientVis
                 query = query.WithParam(param.Key, param.Value);
             }
 
-            // Выполнение запроса
+            // Выполнение запроса и получение результатов
             var result = await query
-                .Return(n => new NodeData { Properties = n.As<Dictionary<string, object>>() })
+                .Return(n => new
+                {
+                    Properties = n.As<Dictionary<string, object>>(),
+                    Id = n.Id()
+                })
                 .ResultsAsync;
 
-            return result?.ToList() ?? new List<NodeData>();
+            // Преобразование результатов в NodeData
+            return result.Select(item =>
+            {
+                item.Properties["Id"] = item.Id;
+                return new NodeData
+                {
+                    Properties = item.Properties,
+                    DisplayString = GetNodeDisplayString(item.Properties)
+                };
+            }).ToList();
         }
 
         public static async Task UpdateBoolProperties(GraphClient client, string label, string propertyName)
@@ -464,7 +493,7 @@ namespace NeoClientVis
         public static string GetNodeDisplayString(Dictionary<string, object> properties)
         {
             return string.Join(", ", properties
-                .Where(p => p.Key != "Label")
+                .Where(p => p.Key != "Label" && p.Key != "Id")
                 .Select(p =>
                 {
                     if (p.Value is Neo4j.Driver.LocalDate localDate)
@@ -503,6 +532,8 @@ namespace NeoClientVis
                 };
             }).ToList();
         }
+
+ 
     }
 
 }

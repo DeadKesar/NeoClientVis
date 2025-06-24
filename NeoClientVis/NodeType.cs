@@ -1,4 +1,7 @@
 ﻿using Newtonsoft.Json;
+using System;
+using System.Collections.Generic;
+using System.Linq;
 
 namespace NeoClientVis
 {
@@ -24,5 +27,18 @@ namespace NeoClientVis
                 kvp => Type.GetType(kvp.Value) ?? typeof(string)
             );
         }
+
+        // Конструктор для десериализации
+        [JsonConstructor]
+        public NodeType(
+            Dictionary<string, string> Label,
+            Dictionary<string, string> PropertiesSerialized)
+        {
+            this.Label = Label ?? new Dictionary<string, string>();
+            this.PropertiesSerialized = PropertiesSerialized ?? new Dictionary<string, string>();
+        }
+
+        // Конструктор без параметров для создания в коде
+        public NodeType() { }
     }
 }
