@@ -59,6 +59,7 @@ namespace NeoClientVis
         /// </summary>
         /// <param name="client">клиент базы данны</param>
         /// <returns></returns>
+
         public static async Task<NodeTypeCollection> LoadNodeTypesFromDb(GraphClient client)
         {
             try
@@ -72,39 +73,37 @@ namespace NeoClientVis
                 if (result != null && result.TryGetValue("Data", out object dataObj))
                 {
                     string json = dataObj.ToString();
+                    Console.WriteLine($"Загруженные данные NodeTypeCollection: {json}");  // Для отладки
 
-                    // Добавим логгирование для отладки
-                    Console.WriteLine($"Загруженные данные NodeTypeCollection:");
-                    Console.WriteLine(json);
-
-                    try
+                    var settings = new JsonSerializerSettings
                     {
-                        var settings = new JsonSerializerSettings
+                        TypeNameHandling = TypeNameHandling.Auto,
+                        Error = (sender, args) =>
                         {
-                            TypeNameHandling = TypeNameHandling.Auto,
-                            Error = (sender, args) =>
-                            {
-                                args.ErrorContext.Handled = true;
-                                Console.WriteLine($"Ошибка десериализации: {args.ErrorContext.Error.Message}");
-                            }
-                        };
+                            args.ErrorContext.Handled = true;
+                            Console.WriteLine($"Ошибка десериализации: {args.ErrorContext.Error.Message}");
+                        }
+                    };
 
-                        return JsonConvert.DeserializeObject<NodeTypeCollection>(json, settings);
-                    }
-                    catch (Exception ex)
-                    {
-                        Console.WriteLine($"Ошибка при десериализации: {ex}");
-                        MessageBox.Show($"Ошибка при загрузке типов узлов: {ex.Message}");
-                    }
+                    return JsonConvert.DeserializeObject<NodeTypeCollection>(json, settings);
                 }
             }
             catch (Exception ex)
             {
                 MessageBox.Show($"Ошибка при загрузке типов узлов: {ex.Message}");
-                Console.WriteLine($"Ошибка при загрузке NodeTypeCollection: {ex}");
+                Console.WriteLine($"Ошибка в LoadNodeTypesFromDb: {ex}");
             }
 
             return new NodeTypeCollection();
+        }
+
+        public static async Task MigrateDatesToLocalDate(GraphClient client, string label)
+        {
+            await client.Cypher
+                .Match($"(n:{label})")
+                .Where("n.Дата IS NOT NULL AND NOT n.Дата IS TYPED DATE")
+                .Set("n.Дата = date(n.Дата)")
+                .ExecuteWithoutResultsAsync();
         }
 
 

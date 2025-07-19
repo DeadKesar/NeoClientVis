@@ -44,6 +44,12 @@ namespace NeoClientVis
                 await _client.ConnectAsync();
                 _nodeTypeCollection = await BDController.LoadNodeTypesFromDb(_client);
 
+                foreach (var nodeType in _nodeTypeCollection.NodeTypes)
+                {
+                    string label = nodeType.Label.Values.First();
+                    await BDController.MigrateDatesToLocalDate(_client, label);  // Новая миграция
+                    await BDController.UpdateBoolProperties(_client, label, "Актуальность");
+                }
                 // Пересчитываем счетчик на случай ручного изменения данных
                 _nodeTypeCollection.RecalculateCount();
 
@@ -80,6 +86,8 @@ namespace NeoClientVis
                     NodesListBox.ItemsSource = null;
                     FilterPanel.Children.Clear();
                 }
+
+                await BDController.SaveNodeTypesToDb(_client, _nodeTypeCollection);
             }
             catch (Exception ex)
             {

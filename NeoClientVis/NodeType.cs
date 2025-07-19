@@ -14,21 +14,21 @@ namespace NeoClientVis
         [JsonIgnore]
         public Dictionary<string, Type> Properties { get; set; } = new Dictionary<string, Type>();
 
-        // Свойство для сериализации типов
+        // Свойство для сериализации типов с полной квалификацией (assembly-qualified name)
         [JsonProperty("Properties")]
         public Dictionary<string, string> PropertiesSerialized
         {
             get => Properties.ToDictionary(
                 kvp => kvp.Key,
-                kvp => kvp.Value.FullName
+                kvp => kvp.Value.AssemblyQualifiedName 
             );
             set => Properties = value.ToDictionary(
                 kvp => kvp.Key,
-                kvp => Type.GetType(kvp.Value) ?? typeof(string)
+                kvp => Type.GetType(kvp.Value) ?? typeof(string)  
             );
         }
 
-        // Конструктор для десериализации
+        // Конструкторы без изменений
         [JsonConstructor]
         public NodeType(
             Dictionary<string, string> Label,
@@ -38,7 +38,6 @@ namespace NeoClientVis
             this.PropertiesSerialized = PropertiesSerialized ?? new Dictionary<string, string>();
         }
 
-        // Конструктор без параметров для создания в коде
         public NodeType() { }
     }
 }
