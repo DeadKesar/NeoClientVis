@@ -422,13 +422,19 @@ namespace NeoClientVis
                         return;
                     }
 
-                    var editNodeWindow = new EditNodeWindow(selectedNode.Properties, propertyTypes);
+                    // Фильтруем свойства: исключаем системные "Id" и "Label"
+                    var propertiesToEdit = selectedNode.Properties
+                        .Where(p => p.Key != "Id" && p.Key != "Label")
+                        .ToDictionary(p => p.Key, p => p.Value);
+
+                    var editNodeWindow = new EditNodeWindow(propertiesToEdit, propertyTypes);
                     editNodeWindow.Owner = this;
 
                     if (editNodeWindow.ShowDialog() == true)
                     {
+                        // Передаём propertyTypes для правильной обработки типов (дат, bool)
                         await BDController.UpdateNodeProperties(_client, label,
-                            selectedNode.Properties, editNodeWindow.Properties);
+                            selectedNode.Properties, editNodeWindow.Properties, propertyTypes);
 
                         // Обновляем текущий список в зависимости от режима
                         if (_currentViewType == "Type")
@@ -767,7 +773,64 @@ namespace NeoClientVis
             }
         }
 
-        private void AddMenuItem_Click(object sender, RoutedEventArgs e) { MessageBox.Show("Функция 'Добавить' пока не реализована."); }
 
+        private async void AddMenuItem_Click(object sender, RoutedEventArgs e)
+        {
+            if (NodesListBox.SelectedItem is NodeData selectedNode)
+            {
+                try
+                {
+                    // Шаг 1: Открываем окно для создания нового связанного узла
+                    var addLinkedNodeWindow = new AddLinkedNodeWindow(_nodeTypeCollection);
+                    addLinkedNodeWindow.Owner = this;
+
+                    if (addLinkedNodeWindow.ShowDialog() == true)
+                    {
+                        // Получаем данные из окна
+                        string selectedTypeKey = addLinkedNodeWindow.SelectedType;
+                        var selectedNodeType = _nodeTypeCollection.NodeTypes.FirstOrDefault(nt => nt.Label.ContainsKey(selectedTypeKey));
+                        if (selectedNodeType == null)
+                        {
+                            MessageBox.Show("Выбранный тип не найден!");
+                            return;
+                        }
+
+                        string label = selectedNodeType.Label.Values.First();
+                        Dictionary<string, object> newProperties = addLinkedNodeWindow.Properties;
+                        string relationshipType = addLinkedNodeWindow.RelationshipType;
+
+                        // Шаг 2: Создаём новый узел
+                        var newNode = await BDController.AddNodeToDb(_client, label, newProperties, selectedNodeType.Properties);
+
+                        // Шаг 3: Создаём связь между выбранным узлом и новым
+                        await BDController.CreateRelationship(_client, selectedNode, newNode, relationshipType);
+
+                        // Шаг 4: Обновляем текущий список в зависимости от режима просмотра
+                        if (_currentViewType == "Type")
+                        {
+                            var nodes = await BDController.LoadNodesByType(_client, label);
+                            _currentNodes = nodes;
+                            NodesListBox.ItemsSource = nodes;
+                        }
+                        else if (_currentViewType == "Related")
+                        {
+                            var relatedNodes = await BDController.LoadRelatedNodes(_client, _currentContextNode);
+                            _currentNodes = relatedNodes;
+                            NodesListBox.ItemsSource = relatedNodes;
+                        }
+
+                        MessageBox.Show("Новый объект успешно добавлен и связан!");
+                    }
+                }
+                catch (Exception ex)
+                {
+                    MessageBox.Show($"Ошибка при добавлении связанного объекта: {ex.Message}");
+                }
+            }
+            else
+            {
+                MessageBox.Show("Выберите узел, к которому добавить новый объект!");
+            }
+        }
     }
 }

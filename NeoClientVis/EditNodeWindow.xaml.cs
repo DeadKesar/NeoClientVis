@@ -21,6 +21,12 @@ namespace NeoClientVis
 
             foreach (var property in currentProperties)
             {
+                if (!_propertyTypes.ContainsKey(property.Key))
+                {
+                    // Пропускаем системные свойства (Id, Label), если они просочились
+                    continue;
+                }
+
                 var label = new Label { Content = $"{property.Key}:" };
                 Control inputControl;
 
