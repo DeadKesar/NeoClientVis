@@ -47,7 +47,8 @@
         <!-- Список узлов с контекстным меню -->
         <ListBox x:Name="NodesListBox" 
                  Grid.Row="1" Grid.Column="0" 
-                 Margin="10">
+                 Margin="10"
+                 DisplayMemberPath="DisplayString">
             <ListBox.ContextMenu>
                 <ContextMenu>
                     <MenuItem Header="Перейти" Click="GoToMenuItem_Click"/>

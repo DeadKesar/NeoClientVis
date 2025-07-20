@@ -1,4 +1,5 @@
 ﻿using Neo4jClient;
+using Neo4jClient.Cypher;
 using Newtonsoft.Json;
 using System;
 using System.Collections.Generic;
@@ -150,7 +151,7 @@ namespace NeoClientVis
         /// <param name="properties">свойство</param>
         /// <param name="propertyTypes">тип свойства</param>
         /// <returns></returns>
-        public static async Task AddNodeToDb(GraphClient client, string label, Dictionary<string, object> properties, Dictionary<string, Type> propertyTypes)
+        public static async Task<NodeData> AddNodeToDb(GraphClient client, string label, Dictionary<string, object> properties, Dictionary<string, Type> propertyTypes)
         {
             try
             {
@@ -180,10 +181,24 @@ namespace NeoClientVis
                 }
 
                 var propertiesString = string.Join(", ", validatedProperties.Select(p => $"{p.Key}: ${p.Key}"));
-                await client.Cypher
+                var query = client.Cypher
                     .Create($"(n:{label} {{ {propertiesString} }})")
                     .WithParams(validatedProperties)
-                    .ExecuteWithoutResultsAsync();
+                    .Return(n => new
+                    {
+                        Properties = n.As<Dictionary<string, object>>(),
+                        Id = n.Id()
+                    });
+
+                var result = (await query.ResultsAsync).Single();
+                result.Properties["Id"] = result.Id;
+                result.Properties["Label"] = label; // Добавляем для consistency
+
+                return new NodeData
+                {
+                    Properties = result.Properties,
+                    DisplayString = GetNodeDisplayString(result.Properties)
+                };
             }
             catch (Exception ex)
             {
@@ -213,10 +228,22 @@ namespace NeoClientVis
 
             try
             {
-                var matchProperties = string.Join(" AND ", oldProperties.Select(p => $"n.{p.Key} = ${p.Key}"));
-                var setProperties = string.Join(", ", newProperties.Select(p => $"n.{p.Key} = ${p.Key}_new"));
+                ICypherFluentQuery query = client.Cypher.Match($"(n:{label})");
 
-                var parameters = oldProperties.ToDictionary(p => p.Key, p => p.Value);
+                if (oldProperties.TryGetValue("Id", out object idObj) && idObj is long nodeId)
+                {
+                    // Match по ID (предпочтительно)
+                    query = query.Where("id(n) = $nodeId").WithParam("nodeId", nodeId);
+                }
+                else
+                {
+                    // Fallback: Match по свойствам
+                    var matchProperties = string.Join(" AND ", oldProperties.Select(p => $"n.{p.Key} = ${p.Key}"));
+                    query = query.Where(matchProperties).WithParams(oldProperties);
+                }
+
+                var setProperties = string.Join(", ", newProperties.Select(p => $"n.{p.Key} = ${p.Key}_new"));
+                var parameters = new Dictionary<string, object>();
 
                 foreach (var prop in newProperties)
                 {
@@ -237,12 +264,7 @@ namespace NeoClientVis
                     }
                 }
 
-                await client.Cypher
-                    .Match($"(n:{label})")
-                    .Where(matchProperties)
-                    .Set(setProperties)
-                    .WithParams(parameters)
-                    .ExecuteWithoutResultsAsync();
+                await query.Set(setProperties).WithParams(parameters).ExecuteWithoutResultsAsync();
             }
             catch (Exception ex)
             {
@@ -258,13 +280,61 @@ namespace NeoClientVis
         /// <returns></returns>
         public static async Task DeleteNode(GraphClient client, string label, Dictionary<string, object> properties)
         {
-            var matchProperties = string.Join(" AND ", properties.Select(p => $"n.{p.Key} = ${p.Key}"));
-            await client.Cypher
-                .Match($"(n:{label})")
-                .Where(matchProperties)
-                .Delete("n")
-                .WithParams(properties.ToDictionary(p => p.Key, p => p.Value))
-                .ExecuteWithoutResultsAsync();
+            try
+            {
+                // Копируем свойства, исключая "Id" и "Label" (они не в БД)
+                var matchPropertiesDict = properties
+                    .Where(p => p.Key != "Id" && p.Key != "Label")
+                    .ToDictionary(p => p.Key, p => p.Value);
+
+                // Если есть "Id", используем его для точного match (предпочтительно)
+                if (properties.TryGetValue("Id", out object idObj) && idObj is long nodeId)
+                {
+                    await client.Cypher
+                        .Match($"(n:{label})")
+                        .Where("id(n) = $nodeId")
+                        .DetachDelete("n")
+                        .WithParam("nodeId", nodeId)
+                        .ExecuteWithoutResultsAsync();
+                }
+                else
+                {
+                    // Fallback: match по свойствам (если ID нет)
+                    if (!matchPropertiesDict.Any())
+                    {
+                        throw new ArgumentException("Нет свойств или ID для match узла.");
+                    }
+
+                    var matchConditions = string.Join(" AND ", matchPropertiesDict.Select(p => $"n.{p.Key} = ${p.Key}"));
+
+                    // Подготавливаем параметры с учётом типов
+                    var parameters = new Dictionary<string, object>();
+                    foreach (var prop in matchPropertiesDict)
+                    {
+                        if (prop.Value is DateTime dateValue)
+                        {
+                            parameters[prop.Key] = new Neo4j.Driver.LocalDate(dateValue.Year, dateValue.Month, dateValue.Day);
+                        }
+                        else
+                        {
+                            parameters[prop.Key] = prop.Value;
+                        }
+                    }
+
+                    await client.Cypher
+                        .Match($"(n:{label})")
+                        .Where(matchConditions)
+                        .DetachDelete("n")
+                        .WithParams(parameters)
+                        .ExecuteWithoutResultsAsync();
+                }
+            }
+            catch (Exception ex)
+            {
+                // Логируем или бросаем дальше
+                Console.WriteLine($"Ошибка удаления: {ex.Message}");
+                throw new Exception($"Не удалось удалить узел: {ex.Message}");
+            }
         }
         /// <summary>
         /// добавление свойства к существующей ноде
@@ -531,9 +601,171 @@ namespace NeoClientVis
                 };
             }).ToList();
         }
+        public static async Task<NodeData> ReplaceNode(
+            GraphClient client,
+            NodeData sourceNode,
+            Dictionary<string, object> newProperties,
+            Dictionary<string, Type> propertyTypes,
+            string label)
+        {
+            using (var tx = client.BeginTransaction()) // Атомарность
+            {
+                try
+                {
+                    // 1. Создаём новый узел с редактированными свойствами
+                    var newNode = await AddNodeToDb(client, label, newProperties, propertyTypes);
 
- 
+                    long sourceId = (long)sourceNode.Properties["Id"];
+                    long targetId = (long)newNode.Properties["Id"];
+
+                    // 2. Переносим связи (outgoing и incoming)
+                    await TransferOutgoingRelationships(client, sourceId, targetId);
+                    await TransferIncomingRelationships(client, sourceId, targetId);
+
+                    // 3. Удаляем все связи от старого узла
+                    await client.Cypher
+                        .Match("(a)-[r]-()")
+                        .Where("id(a) = $sourceId")
+                        .Delete("r")
+                        .WithParam("sourceId", sourceId)
+                        .ExecuteWithoutResultsAsync();
+
+                    // 4. Обновляем "Актуальность" старого узла на false (используем match по ID)
+                    await UpdateNodeProperties(client, label, sourceNode.Properties, new Dictionary<string, object> { { "Актуальность", false } }, propertyTypes);
+
+                    // 5. Создаём связь "ЗАМЕНЕН_НА"
+                    await CreateRelationship(client, sourceNode, newNode, "ЗАМЕНЕН_НА");
+
+                    await tx.CommitAsync();
+                    return newNode;
+                }
+                catch (Exception ex)
+                {
+                    await tx.RollbackAsync();
+                    throw new Exception($"Ошибка при замене узла: {ex.Message}", ex);
+                }
+            }
+        }
+
+        private static async Task<NodeData> GetNodeByProperties(
+            GraphClient client,
+            string label,
+            Dictionary<string, object> properties)
+        {
+            var matchConditions = string.Join(" AND ", properties
+                .Where(p => p.Key != "Id" && p.Key != "Label")
+                .Select(p => $"n.{p.Key} = ${p.Key}"));
+
+            var query = client.Cypher
+                .Match($"(n:{label})")
+                .Where(matchConditions)
+                .WithParams(properties)
+                .Return(n => new
+                {
+                    Properties = n.As<Dictionary<string, object>>(),
+                    Id = n.Id()
+                });
+
+            var result = (await query.ResultsAsync).FirstOrDefault();
+
+            if (result == null)
+                throw new Exception("Не удалось найти созданный узел");
+
+            result.Properties["Id"] = result.Id;
+            return new NodeData
+            {
+                Properties = result.Properties,
+                DisplayString = GetNodeDisplayString(result.Properties)
+            };
+        }
+
+        private static async Task TransferRelationships(
+            GraphClient client,
+            NodeData sourceNode,
+            NodeData targetNode)
+        {
+            long sourceId = (long)sourceNode.Properties["Id"];
+            long targetId = (long)targetNode.Properties["Id"];
+
+            // Перенос всех отношений
+            var relationships = await client.Cypher
+                .Match($"(a)-[r]->(b)")
+                .Where("id(a) = $sourceId")
+                .WithParam("sourceId", sourceId)
+                .Return(r => new
+                {
+                    Type = r.Type(),
+                    TargetId = Return.As<long>("id(b)")
+                })
+                .ResultsAsync;
+
+            foreach (var rel in relationships)
+            {
+                // Создаем такую же связь для нового узла
+                await client.Cypher
+                    .Match("(a)", "(b)")
+                    .Where("id(a) = $targetId AND id(b) = $relId")
+                    .Create($"(a)-[:{rel.Type}]->(b)")
+                    .WithParams(new
+                    {
+                        targetId,
+                        relId = rel.TargetId
+                    })
+                    .ExecuteWithoutResultsAsync();
+            }
+        }
+        private static async Task TransferOutgoingRelationships(GraphClient client, long sourceId, long targetId)
+        {
+            var relationships = await client.Cypher
+                .Match("(a)-[r]->(b)")
+                .Where("id(a) = $sourceId")
+                .WithParam("sourceId", sourceId)
+                .Return(r => new
+                {
+                    Type = r.Type(),
+                    TargetId = Return.As<long>("id(b)")
+                })
+                .ResultsAsync;
+
+            foreach (var rel in relationships)
+            {
+                await client.Cypher
+                    .Match("(a)", "(b)")
+                    .Where("id(a) = $targetId AND id(b) = $relId")
+                    .Create($"(a)-[:{rel.Type}]->(b)")
+                    .WithParams(new { targetId, relId = rel.TargetId })
+                    .ExecuteWithoutResultsAsync();
+            }
+        }
+
+        private static async Task TransferIncomingRelationships(GraphClient client, long sourceId, long targetId)
+        {
+            var relationships = await client.Cypher
+                .Match("(b)-[r]->(a)")
+                .Where("id(a) = $sourceId")
+                .WithParam("sourceId", sourceId)
+                .Return(r => new
+                {
+                    Type = r.Type(),
+                    SourceId = Return.As<long>("id(b)")
+                })
+                .ResultsAsync;
+
+            foreach (var rel in relationships)
+            {
+                await client.Cypher
+                    .Match("(a)", "(b)")
+                    .Where("id(a) = $relSourceId AND id(b) = $targetId")
+                    .Create($"(a)-[:{rel.Type}]->(b)")
+                    .WithParams(new { relSourceId = rel.SourceId, targetId })
+                    .ExecuteWithoutResultsAsync();
+            }
+        }
+
+
+
+
+
     }
 
 }
-
