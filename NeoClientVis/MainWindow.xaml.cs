@@ -31,8 +31,27 @@ namespace NeoClientVis
         /// </summary>
         private void InitializeNeo4jClient()
         {
-            _client = new GraphClient(new Uri("http://localhost:7474"), "neo4j", "12345678a");
-            _client.ConnectAsync().Wait(); // Синхронное подключение для простоты
+            var config = ConfigManager.LoadConfig();
+            _client = new GraphClient(new Uri(config.Uri), config.Username, config.Password);
+            try
+            {
+                _client.ConnectAsync().Wait(); // Синхронное для простоты, но можно async
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"Ошибка подключения к Neo4j: {ex.Message}\nПроверьте config.json и доступ к серверу.");
+                // Опционально: открыть окно для редактирования конфига
+                var editConfigWindow = new EditConfigWindow(config);
+                if (editConfigWindow.ShowDialog() == true)
+                {
+                    ConfigManager.SaveConfig(editConfigWindow.UpdatedConfig);
+                    InitializeNeo4jClient(); // Рекурсивно попробовать снова
+                }
+                else
+                {
+                    Application.Current.Shutdown(); // Или обработать иначе
+                }
+            }
         }
         /// <summary>
         /// выгрузка состояния из БД
