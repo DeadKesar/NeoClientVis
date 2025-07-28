@@ -7,7 +7,7 @@ namespace NeoClientVis
 {
     public partial class AddNodeWindow : Window
     {
-        private readonly Dictionary<string, Control> _propertyInputs; // Изменяем на Control для поддержки разных типов
+        private readonly Dictionary<string, Control> _propertyInputs;
         private readonly Dictionary<string, Type> _propertyTypes;
 
         public Dictionary<string, object> Properties { get; private set; }
@@ -79,13 +79,23 @@ namespace NeoClientVis
                     PropertiesPanel.Children.Add(label);
                     PropertiesPanel.Children.Add(inputControl);
                 }
+                else if (property.Value == typeof(Neo4j.Driver.LocalDate))
+                {
+                    inputControl = new DatePicker
+                    {
+                        Width = 200,
+                        Margin = new Thickness(0, 0, 0, 5),
+                        SelectedDate = DateTime.Now // Значение по умолчанию - текущая дата
+                    };
+                    PropertiesPanel.Children.Add(label);
+                    PropertiesPanel.Children.Add(inputControl);
+                }
                 else
                 {
                     inputControl = new TextBox
                     {
                         Width = 200,
-                        Margin = new Thickness(0, 0, 0, 5),
-                        Text = property.Value == typeof(DateTime) ? DateTime.Now.ToString("yyyy-MM-dd") : ""
+                        Margin = new Thickness(0, 0, 0, 5)
                     };
                     PropertiesPanel.Children.Add(label);
                     PropertiesPanel.Children.Add(inputControl);
@@ -100,14 +110,18 @@ namespace NeoClientVis
             Properties = new Dictionary<string, object>();
             foreach (var kvp in _propertyInputs)
             {
-                if (_propertyTypes[kvp.Key] == typeof(DateTime))
+                if (_propertyTypes[kvp.Key] == typeof(Neo4j.Driver.LocalDate))
                 {
-                    if (!DateTime.TryParse((kvp.Value as TextBox)?.Text, out _))
+                    var datePicker = kvp.Value as DatePicker;
+                    if (datePicker?.SelectedDate.HasValue == true)
                     {
-                        MessageBox.Show($"Неверный формат даты для '{kvp.Key}'. Используйте формат 'yyyy-MM-dd'.");
+                        Properties[kvp.Key] = datePicker.SelectedDate.Value.ToString("yyyy-MM-dd");
+                    }
+                    else
+                    {
+                        MessageBox.Show($"Пожалуйста, выберите дату для '{kvp.Key}'.");
                         return;
                     }
-                    Properties[kvp.Key] = (kvp.Value as TextBox)?.Text ?? "";
                 }
                 else if (_propertyTypes[kvp.Key] == typeof(bool))
                 {
