@@ -25,7 +25,7 @@
             <ComboBox x:Name="NodeTypeComboBox" 
                       Width="200" 
                       SelectionChanged="NodeTypeComboBox_SelectionChanged"/>
-            
+
             <Button x:Name="AddNodeTypeButton" 
                     Content="Добавить тип" 
                     Margin="10,0,0,0" 
@@ -64,16 +64,24 @@
         <!-- Правая колонка: панель фильтров -->
         <Grid Grid.Row="1" Grid.Column="1" Margin="10">
             <Grid.RowDefinitions>
+                <RowDefinition Height="Auto"/>
+                <!-- Новый ряд для ComboBox кастомных фильтров -->
                 <RowDefinition Height="*"/>
                 <RowDefinition Height="Auto"/>
             </Grid.RowDefinitions>
 
-            <ScrollViewer Grid.Row="0">
+            <ComboBox x:Name="CustomFilterComboBox" 
+                      Grid.Row="0" 
+                      Width="200" 
+                      Margin="0,0,0,10" 
+                      SelectionChanged="CustomFilterComboBox_SelectionChanged"/>
+
+            <ScrollViewer Grid.Row="1">
                 <StackPanel x:Name="FilterPanel" Orientation="Vertical"/>
             </ScrollViewer>
 
             <Button x:Name="AddPropertyButton" 
-                    Grid.Row="1" 
+                    Grid.Row="2" 
                     Content="Добавить свойство" 
                     Margin="0,10,0,0" 
                     Click="AddPropertyButton_Click"/>

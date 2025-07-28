@@ -20,11 +20,24 @@ namespace NeoClientVis
         private string _currentViewType; // "Type" или "Related"
         private NodeData _currentContextNode; // Текущий контекстный узел
         private List<NodeData> _currentNodes; // Текущий список узлов для отображения
+        private Dictionary<string, IFilter> _customFilters;
+        private string _selectedCustomFilter = "None";
         public MainWindow()
         {
             InitializeComponent();
             InitializeNeo4jClient();
             LoadDataAsync();
+            _customFilters = new Dictionary<string, IFilter>
+            {
+                { "None", null },
+                { "истёкшие актуальные доки", new ExpiredDocumentsFilter() }
+                // Добавьте другие фильтры здесь, например:
+                // { "Actual Documents", new ActualDocumentsFilter() }
+            };
+
+            CustomFilterComboBox.ItemsSource = _customFilters.Keys;
+            CustomFilterComboBox.SelectedItem = "None";
+
         }
         /// <summary>
         /// подключение к бд
@@ -98,12 +111,14 @@ namespace NeoClientVis
                         var nodes = await BDController.LoadNodesByType(_client, label);
                         _currentNodes = nodes;
                         NodesListBox.ItemsSource = nodes;
+                        ApplyCustomFilter();
                     }
                 }
                 else
                 {
                     NodesListBox.ItemsSource = null;
                     FilterPanel.Children.Clear();
+                    ApplyCustomFilter();
                 }
 
                 await BDController.SaveNodeTypesToDb(_client, _nodeTypeCollection);
@@ -139,6 +154,8 @@ namespace NeoClientVis
 
                     // Создаём фильтры
                     CreateFilterControls(selectedNodeType.Properties);
+
+                    ApplyCustomFilter();
                 }
             }
         }
@@ -269,6 +286,8 @@ namespace NeoClientVis
                     // Используем DisplayString вместо ручного форматирования
                     _currentNodes = nodes;
                     NodesListBox.ItemsSource = nodes;
+
+                    ApplyCustomFilter();
                 }
             }
         }
@@ -308,6 +327,7 @@ namespace NeoClientVis
 
                             var nodes = await BDController.LoadNodesByType(_client, label);
                             NodesListBox.ItemsSource = nodes;
+                            ApplyCustomFilter();
                         }
                         else
                         {
@@ -355,6 +375,7 @@ namespace NeoClientVis
                         var nodes = await BDController.LoadNodesByType(_client, label);
                         _currentNodes = nodes;
                         NodesListBox.ItemsSource = nodes;
+                        ApplyCustomFilter();
                     }
                 }
                 else
@@ -384,6 +405,7 @@ namespace NeoClientVis
 
                         var nodes = await BDController.LoadNodesByType(_client, label);
                         NodesListBox.ItemsSource = nodes;
+                        ApplyCustomFilter();
                     }
                 }
             }
@@ -461,12 +483,14 @@ namespace NeoClientVis
                             var nodes = await BDController.LoadNodesByType(_client, label);
                             _currentNodes = nodes;
                             NodesListBox.ItemsSource = nodes;
+                            ApplyCustomFilter();
                         }
                         else if (_currentViewType == "Related")
                         {
                             var relatedNodes = await BDController.LoadRelatedNodes(_client, _currentContextNode);
                             _currentNodes = relatedNodes;
                             NodesListBox.ItemsSource = relatedNodes;
+                            ApplyCustomFilter();
                         }
                     }
                 }
@@ -532,12 +556,14 @@ namespace NeoClientVis
                             var nodes = await BDController.LoadNodesByType(_client, label);
                             _currentNodes = nodes;
                             NodesListBox.ItemsSource = nodes;
+                            ApplyCustomFilter();
                         }
                         else if (_currentViewType == "Related")
                         {
                             var relatedNodes = await BDController.LoadRelatedNodes(_client, _currentContextNode);
                             _currentNodes = relatedNodes;
                             NodesListBox.ItemsSource = relatedNodes;
+                            ApplyCustomFilter();
                         }
 
                         MessageBox.Show("Узел успешно удалён.");
@@ -562,6 +588,7 @@ namespace NeoClientVis
         /// <param name="e"></param>
         private void ResetFiltersButton_Click(object sender, RoutedEventArgs e)
         {
+            // Сброс динамических фильтров (существующий код)
             foreach (var kvp in _filterControls)
             {
                 if (kvp.Value[0] is CheckBox trueCheckBox)
@@ -579,6 +606,11 @@ namespace NeoClientVis
                     (kvp.Value[0] as TextBox).Text = "";
                 }
             }
+
+            // Сброс кастомного фильтра
+            CustomFilterComboBox.SelectedItem = "None";
+
+            // Применяем изменения (FilterControl_Changed вызовет ApplyCustomFilter)
             FilterControl_Changed(sender, e);
         }
 
@@ -635,6 +667,7 @@ namespace NeoClientVis
                     var relatedNodes = await BDController.LoadRelatedNodes(_client, selectedNode);
                     _currentNodes = relatedNodes;
                     NodesListBox.ItemsSource = relatedNodes;
+                    ApplyCustomFilter();
 
                     // Обновляем состояние
                     _currentViewType = "Related";
@@ -663,6 +696,7 @@ namespace NeoClientVis
                 var previousNodes = _navigationHistory.Pop();
                 _currentNodes = previousNodes;  // Добавьте это для синхронизации состояния
                 NodesListBox.ItemsSource = previousNodes;
+                ApplyCustomFilter();
 
                 if (_navigationHistory.Count == 0)
                 {
@@ -770,12 +804,14 @@ namespace NeoClientVis
                             var nodes = await BDController.LoadNodesByType(_client, typeLabel);
                             _currentNodes = nodes;
                             NodesListBox.ItemsSource = nodes;
+                            ApplyCustomFilter();
                         }
                         else if (_currentViewType == "Related")
                         {
                             var relatedNodes = await BDController.LoadRelatedNodes(_client, _currentContextNode);
                             _currentNodes = relatedNodes;
                             NodesListBox.ItemsSource = relatedNodes;
+                            ApplyCustomFilter();
                         }
 
                         MessageBox.Show("Узел успешно заменен!");
@@ -830,12 +866,14 @@ namespace NeoClientVis
                             var nodes = await BDController.LoadNodesByType(_client, label);
                             _currentNodes = nodes;
                             NodesListBox.ItemsSource = nodes;
+                            ApplyCustomFilter();
                         }
                         else if (_currentViewType == "Related")
                         {
                             var relatedNodes = await BDController.LoadRelatedNodes(_client, _currentContextNode);
                             _currentNodes = relatedNodes;
                             NodesListBox.ItemsSource = relatedNodes;
+                            ApplyCustomFilter();
                         }
 
                         MessageBox.Show("Новый объект успешно добавлен и связан!");
@@ -849,6 +887,30 @@ namespace NeoClientVis
             else
             {
                 MessageBox.Show("Выберите узел, к которому добавить новый объект!");
+            }
+        }
+        private void ApplyCustomFilter()
+        {
+            if (_currentNodes == null) return;
+
+            var filteredNodes = _currentNodes; // Начинаем с текущего списка (после динамических фильтров)
+
+            if (_customFilters.TryGetValue(_selectedCustomFilter, out var filter) && filter != null)
+            {
+                filteredNodes = filter.Apply(filteredNodes);
+            }
+
+            NodesListBox.ItemsSource = filteredNodes;
+        }
+
+       
+
+        private void CustomFilterComboBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
+        {
+            if (CustomFilterComboBox.SelectedItem is string selected)
+            {
+                _selectedCustomFilter = selected;
+                ApplyCustomFilter();
             }
         }
     }
