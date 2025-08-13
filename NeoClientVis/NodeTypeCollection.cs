@@ -35,7 +35,7 @@ namespace NeoClientVis
                 {
                     { "Актуальность", typeof(bool) },
                     { "Имя", typeof(string) },
-                    { "Дата", typeof(Neo4j.Driver.LocalDate) },
+                    { "Дата", typeof(DateTime) },
                     { "Путь_к_файлу", typeof(string) }
                 };
 

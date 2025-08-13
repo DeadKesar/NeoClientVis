@@ -203,15 +203,7 @@ namespace NeoClientVis
                     var fromDatePicker = new DatePicker { Width = 100, Margin = new Thickness(0, 0, 0, 5) };
                     var toLabel = new Label { Content = "До:", Margin = new Thickness(10, 0, 0, 0) };
                     var toDatePicker = new DatePicker { Width = 100, Margin = new Thickness(0, 0, 0, 5) };
-                    fromDatePicker.SelectedDateChanged += (s, e) =>
-                    {
-                        if (fromDatePicker.SelectedDate.HasValue && toDatePicker.SelectedDate.HasValue &&
-                            fromDatePicker.SelectedDate > toDatePicker.SelectedDate)
-                        {
-                            MessageBox.Show("Дата 'От' не может быть позже даты 'До'.");
-                            fromDatePicker.SelectedDate = null;
-                        }
-                    };
+                    fromDatePicker.SelectedDateChanged += FilterControl_Changed;
                     toDatePicker.SelectedDateChanged += FilterControl_Changed;
                     controls = new Control[] { fromDatePicker, toDatePicker };
                     var datePanel = new StackPanel { Orientation = Orientation.Horizontal };

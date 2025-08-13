@@ -1,4 +1,5 @@
-﻿using Neo4jClient;
+﻿using Neo4j.Driver;
+using Neo4jClient;
 using Neo4jClient.Cypher;
 using Newtonsoft.Json;
 using System;
@@ -33,7 +34,8 @@ namespace NeoClientVis
             var results = await query.ResultsAsync;
             return results.Select(item =>
             {
-                item.Properties["Id"] = item.Id; // Сохраняем ID в свойства
+                item.Properties["Id"] = item.Id;
+                NormalizeDateProperty(item.Properties);
                 return new NodeData
                 {
                     Properties = item.Properties,
@@ -100,11 +102,24 @@ namespace NeoClientVis
 
         public static async Task MigrateDatesToLocalDate(GraphClient client, string label)
         {
-            await client.Cypher
-                .Match($"(n:{label})")
-                .Where("n.Дата IS NOT NULL AND NOT n.Дата IS TYPED DATE")
-                .Set("n.Дата = date(n.Дата)")
-                .ExecuteWithoutResultsAsync();
+            try
+            {
+                // Запускаем миграцию для всех узлов с существующей датой.
+                // Если дата уже date, date(n.Дата) не изменит её.
+                // Если строка в формате "yyyy-MM-dd", преобразуется успешно.
+                // Если неверный формат, запрос упадёт — обработайте в логе.
+                await client.Cypher
+                    .Match($"(n:{label})")
+                    .Where("n.Дата IS NOT NULL")
+                    .Set("n.Дата = date(n.Дата)")
+                    .ExecuteWithoutResultsAsync();
+            }
+            catch (Exception ex)
+            {
+                // Логируйте или покажите ошибку (например, если строка не парсится как дата)
+                Console.WriteLine($"Ошибка миграции дат для {label}: {ex.Message}");
+                MessageBox.Show($"Ошибка миграции дат для типа '{label}': Проверьте формат дат в БД. {ex.Message}");
+            }
         }
 
 
@@ -158,10 +173,10 @@ namespace NeoClientVis
                 var validatedProperties = new Dictionary<string, object>();
                 foreach (var prop in properties)
                 {
-                    if (propertyTypes[prop.Key] == typeof(Neo4j.Driver.LocalDate))
+                    if (propertyTypes[prop.Key] == typeof(DateTime))
                     {
                         if (DateTime.TryParse(prop.Value?.ToString(), out var date))
-                            validatedProperties[prop.Key] = new Neo4j.Driver.LocalDate(date.Year, date.Month, date.Day);
+                            validatedProperties[prop.Key] = date.ToString("yyyy-MM-dd"); // Строка для БД
                         else
                             throw new ArgumentException($"Неверный формат даты для свойства '{prop.Key}': {prop.Value}");
                     }
@@ -193,7 +208,7 @@ namespace NeoClientVis
                 var result = (await query.ResultsAsync).Single();
                 result.Properties["Id"] = result.Id;
                 result.Properties["Label"] = label; // Добавляем для consistency
-
+                NormalizeDateProperty(result.Properties);
                 return new NodeData
                 {
                     Properties = result.Properties,
@@ -386,13 +401,17 @@ namespace NeoClientVis
                     var dateConditions = new List<string>();
                     if (from.HasValue)
                     {
-                        dateConditions.Add($"n.{filter.Key} >= $fromDate");
-                        parameters["fromDate"] = new Neo4j.Driver.LocalDate(from.Value.Year, from.Value.Month, from.Value.Day);
+                        dateConditions.Add($"n.Дата >= date({{year: $fromYear, month: $fromMonth, day: $fromDay}})");
+                        parameters["fromYear"] = from.Value.Year;
+                        parameters["fromMonth"] = from.Value.Month;
+                        parameters["fromDay"] = from.Value.Day;
                     }
                     if (to.HasValue)
                     {
-                        dateConditions.Add($"n.{filter.Key} <= $toDate");
-                        parameters["toDate"] = new Neo4j.Driver.LocalDate(to.Value.Year, to.Value.Month, to.Value.Day);
+                        dateConditions.Add($"n.Дата <= date({{year: $toYear, month: $toMonth, day: $toDay}})");
+                        parameters["toYear"] = to.Value.Year;
+                        parameters["toMonth"] = to.Value.Month;
+                        parameters["toDay"] = to.Value.Day;
                     }
 
                     if (dateConditions.Any())
@@ -433,6 +452,7 @@ namespace NeoClientVis
             return result.Select(item =>
             {
                 item.Properties["Id"] = item.Id;
+                NormalizeDateProperty(item.Properties);
                 return new NodeData
                 {
                     Properties = item.Properties,
@@ -565,8 +585,8 @@ namespace NeoClientVis
                 .Where(p => p.Key != "Label" && p.Key != "Id")
                 .Select(p =>
                 {
-                    if (p.Value is Neo4j.Driver.LocalDate localDate)
-                        return $"{p.Key}: {new DateTime(localDate.Year, localDate.Month, localDate.Day):yyyy-MM-dd}";
+                    if (p.Value is DateTime dtValue)
+                        return $"{p.Key}: {dtValue:yyyy-MM-dd}";
                     return $"{p.Key}: {p.Value}";
                 }));
         }
@@ -594,6 +614,7 @@ namespace NeoClientVis
                 item.Properties["Id"] = item.Id;
                 // Используем первую метку как тип узла
                 item.Properties["Label"] = item.Labels.FirstOrDefault() ?? "Unknown";
+                NormalizeDateProperty(item.Properties);
                 return new NodeData
                 {
                     Properties = item.Properties,
@@ -762,7 +783,34 @@ namespace NeoClientVis
             }
         }
 
-
+        private static void NormalizeDateProperty(Dictionary<string, object> properties)
+        {
+            if (properties.TryGetValue("Дата", out var dateObj))
+            {
+                DateTime? parsedDate = null;
+                if (dateObj is LocalDate ld)
+                {
+                    parsedDate = new DateTime(ld.Year, ld.Month, ld.Day);
+                }
+                else if (dateObj is DateTime dt)
+                {
+                    parsedDate = dt;
+                }
+                else if (dateObj is string dateStr && DateTime.TryParse(dateStr, out dt))
+                {
+                    parsedDate = dt;
+                }
+                if (parsedDate.HasValue)
+                {
+                    properties["Дата"] = parsedDate.Value;
+                }
+                else
+                {
+                    // Если не парсится, удалить или установить default
+                    properties["Дата"] = DateTime.MinValue; // Или null, но Neo4j не любит null
+                }
+            }
+        }
 
 
 
