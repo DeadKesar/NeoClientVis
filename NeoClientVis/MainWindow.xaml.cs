@@ -6,6 +6,8 @@ using System.Linq;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
+using System.ComponentModel;  // Для CollectionViewSource
+using System.Windows.Data;   // Для Binding
 
 
 namespace NeoClientVis
@@ -22,6 +24,7 @@ namespace NeoClientVis
         private List<NodeData> _currentNodes; // Текущий список узлов для отображения
         private Dictionary<string, IFilter> _customFilters;
         private string _selectedCustomFilter = "None";
+        private CollectionViewSource _nodesViewSource;
         public MainWindow()
         {
             InitializeComponent();
@@ -75,52 +78,48 @@ namespace NeoClientVis
             {
                 await _client.ConnectAsync();
                 _nodeTypeCollection = await BDController.LoadNodeTypesFromDb(_client);
-
+                _nodesViewSource = new CollectionViewSource();
                 foreach (var nodeType in _nodeTypeCollection.NodeTypes)
                 {
                     string label = nodeType.Label.Values.First();
-                    await BDController.MigrateDatesToLocalDate(_client, label);  // Новая миграция
+                    await BDController.MigrateDatesToLocalDate(_client, label); // Новая миграция
                     await BDController.UpdateBoolProperties(_client, label, "Актуальность");
                 }
                 // Пересчитываем счетчик на случай ручного изменения данных
                 _nodeTypeCollection.RecalculateCount();
-
                 foreach (var nodeType in _nodeTypeCollection.NodeTypes)
                 {
                     string label = nodeType.Label.Values.First();
                     await BDController.UpdateBoolProperties(_client, label, "Актуальность");
                 }
-
                 NodeTypeComboBox.ItemsSource = _nodeTypeCollection.NodeTypes.Select(nt => nt.Label.First().Key);
                 if (_nodeTypeCollection.NodeTypes.Count > 0)
                 {
                     NodeTypeComboBox.SelectedIndex = 0;
-
                     // Добавляем вызов создания фильтров для выбранного типа
                     var selectedType = NodeTypeComboBox.SelectedItem as string;
                     var selectedNodeType = _nodeTypeCollection.NodeTypes
                         .FirstOrDefault(nt => nt.Label.ContainsKey(selectedType));
-
                     if (selectedNodeType != null)
                     {
                         // Создаём фильтры для начального типа
                         CreateFilterControls(selectedNodeType.Properties);
-
                         // Загружаем узлы для начального типа
                         string label = selectedNodeType.Label.Values.First();
                         var nodes = await BDController.LoadNodesByType(_client, label);
                         _currentNodes = nodes;
-                        NodesListBox.ItemsSource = nodes;
+                        _nodesViewSource.Source = _currentNodes;
+                        NodesDataGrid.ItemsSource = _nodesViewSource.View;
+                        GenerateDataGridColumns(); // Генерируем колонки
                         ApplyCustomFilter();
                     }
                 }
                 else
                 {
-                    NodesListBox.ItemsSource = null;
+                    NodesDataGrid.ItemsSource = null;
                     FilterPanel.Children.Clear();
                     ApplyCustomFilter();
                 }
-
                 await BDController.SaveNodeTypesToDb(_client, _nodeTypeCollection);
             }
             catch (Exception ex)
@@ -140,7 +139,6 @@ namespace NeoClientVis
             BackButton.Visibility = Visibility.Collapsed;
             _currentViewType = "Type";
             this.Title = "Neo4j Node Viewer";
-
             if (NodeTypeComboBox.SelectedItem is string selectedType)
             {
                 var selectedNodeType = _nodeTypeCollection.NodeTypes.FirstOrDefault(nt => nt.Label.ContainsKey(selectedType));
@@ -150,11 +148,11 @@ namespace NeoClientVis
                     string label = selectedNodeType.Label.Values.First();
                     var nodes = await BDController.LoadNodesByType(_client, label);
                     _currentNodes = nodes;
-                    NodesListBox.ItemsSource = nodes;
-
+                    _nodesViewSource.Source = _currentNodes;
+                    NodesDataGrid.ItemsSource = _nodesViewSource.View;
                     // Создаём фильтры
                     CreateFilterControls(selectedNodeType.Properties);
-
+                    GenerateDataGridColumns(); // Генерируем колонки
                     ApplyCustomFilter();
                 }
             }
@@ -271,14 +269,13 @@ namespace NeoClientVis
                                 filters[kvp.Key] = text;
                         }
                     }
-
                     string label = selectedNodeType.Label.Values.First();
                     var nodes = await BDController.LoadFilteredNodes(_client, label, filters);
-
                     // Используем DisplayString вместо ручного форматирования
                     _currentNodes = nodes;
-                    NodesListBox.ItemsSource = nodes;
-
+                    _nodesViewSource.Source = _currentNodes;
+                    NodesDataGrid.ItemsSource = _nodesViewSource.View;
+                    GenerateDataGridColumns(); // Генерируем колонки (на случай изменений)
                     ApplyCustomFilter();
                 }
             }
@@ -305,7 +302,6 @@ namespace NeoClientVis
                     {
                         string newProperty = addPropertyWindow.PropertyName;
                         Type newPropertyType = addPropertyWindow.PropertyType;
-
                         if (!selectedNodeType.Properties.ContainsKey(newProperty))
                         {
                             selectedNodeType.Properties[newProperty] = newPropertyType;
@@ -313,12 +309,13 @@ namespace NeoClientVis
                             object defaultValue = newPropertyType == typeof(DateTime) ? DateTime.MinValue : newPropertyType == typeof(bool) ? false : "";
                             await BDController.UpdateNodesWithNewProperty(_client, label, newProperty, defaultValue);
                             await BDController.SaveNodeTypesToDb(_client, _nodeTypeCollection);
-
                             // Пересоздаём фильтры
                             CreateFilterControls(selectedNodeType.Properties);
-
                             var nodes = await BDController.LoadNodesByType(_client, label);
-                            NodesListBox.ItemsSource = nodes;
+                            _currentNodes = nodes;
+                            _nodesViewSource.Source = _currentNodes;
+                            NodesDataGrid.ItemsSource = _nodesViewSource.View;
+                            GenerateDataGridColumns(); // Генерируем колонки (новое свойство добавлено)
                             ApplyCustomFilter();
                         }
                         else
@@ -341,32 +338,29 @@ namespace NeoClientVis
                 "Добавление типа узла",
                 "",
                 -1, -1);
-
             if (!string.IsNullOrWhiteSpace(newTypeName))
             {
                 if (!_nodeTypeCollection.NodeTypes.Any(nt => nt.Label.ContainsKey(newTypeName)))
                 {
                     _nodeTypeCollection.AddNodeType(newTypeName);
                     await BDController.SaveNodeTypesToDb(_client, _nodeTypeCollection);
-
                     // Принудительно обновляем источник данных комбобокса
                     var types = _nodeTypeCollection.NodeTypes.Select(nt => nt.Label.First().Key).ToList();
                     NodeTypeComboBox.ItemsSource = types;
                     NodeTypeComboBox.SelectedItem = newTypeName;
-
                     // Явно обновляем фильтры
                     var selectedNodeType = _nodeTypeCollection.NodeTypes
                         .FirstOrDefault(nt => nt.Label.ContainsKey(newTypeName));
-
                     if (selectedNodeType != null)
                     {
                         CreateFilterControls(selectedNodeType.Properties);
-
                         // Загружаем узлы для нового типа
                         string label = selectedNodeType.Label.Values.First();
                         var nodes = await BDController.LoadNodesByType(_client, label);
                         _currentNodes = nodes;
-                        NodesListBox.ItemsSource = nodes;
+                        _nodesViewSource.Source = _currentNodes;
+                        NodesDataGrid.ItemsSource = _nodesViewSource.View;
+                        GenerateDataGridColumns(); // Генерируем колонки для нового типа
                         ApplyCustomFilter();
                     }
                 }
@@ -394,9 +388,11 @@ namespace NeoClientVis
                     {
                         string label = selectedNodeType.Label.Values.First();
                         await BDController.AddNodeToDb(_client, label, addNodeWindow.Properties, selectedNodeType.Properties);
-
                         var nodes = await BDController.LoadNodesByType(_client, label);
-                        NodesListBox.ItemsSource = nodes;
+                        _currentNodes = nodes;
+                        _nodesViewSource.Source = _currentNodes;
+                        NodesDataGrid.ItemsSource = _nodesViewSource.View;
+                        GenerateDataGridColumns(); // Генерируем колонки (на случай изменений)
                         ApplyCustomFilter();
                     }
                 }
@@ -416,25 +412,22 @@ namespace NeoClientVis
         /// <param name="e"></param>
         private async void PropertiesMenuItem_Click(object sender, RoutedEventArgs e)
         {
-            if (NodesListBox.SelectedItem is NodeData selectedNode)
+            if (NodesDataGrid.SelectedItem is NodeData selectedNode)
             {
                 try
                 {
                     string label;
                     Dictionary<string, Type> propertyTypes;
-
                     if (_currentViewType == "Type")
                     {
                         var selectedType = NodeTypeComboBox.SelectedItem as string;
                         var selectedNodeType = _nodeTypeCollection.NodeTypes
                             .FirstOrDefault(nt => nt.Label.ContainsKey(selectedType));
-
                         if (selectedNodeType == null)
                         {
                             MessageBox.Show("Тип узла не найден!");
                             return;
                         }
-
                         label = selectedNodeType.Label.Values.First();
                         propertyTypes = selectedNodeType.Properties;
                     }
@@ -443,10 +436,8 @@ namespace NeoClientVis
                         label = selectedNode.Properties.ContainsKey("Label")
                             ? selectedNode.Properties["Label"].ToString()
                             : "Unknown";
-
                         var nodeType = _nodeTypeCollection.NodeTypes.FirstOrDefault(nt =>
                             nt.Label.Values.Contains(label));
-
                         propertyTypes = nodeType?.Properties ?? new Dictionary<string, Type>();
                     }
                     else
@@ -454,34 +445,34 @@ namespace NeoClientVis
                         MessageBox.Show("Неизвестный режим просмотра!");
                         return;
                     }
-
                     // Фильтруем свойства: исключаем системные "Id" и "Label"
                     var propertiesToEdit = selectedNode.Properties
                         .Where(p => p.Key != "Id" && p.Key != "Label")
                         .ToDictionary(p => p.Key, p => p.Value);
-
                     var editNodeWindow = new EditNodeWindow(propertiesToEdit, propertyTypes);
                     editNodeWindow.Owner = this;
-
                     if (editNodeWindow.ShowDialog() == true)
                     {
                         // Передаём propertyTypes для правильной обработки типов (дат, bool)
                         await BDController.UpdateNodeProperties(_client, label,
                             selectedNode.Properties, editNodeWindow.Properties, propertyTypes);
-
                         // Обновляем текущий список в зависимости от режима
                         if (_currentViewType == "Type")
                         {
                             var nodes = await BDController.LoadNodesByType(_client, label);
                             _currentNodes = nodes;
-                            NodesListBox.ItemsSource = nodes;
+                            _nodesViewSource.Source = _currentNodes;
+                            NodesDataGrid.ItemsSource = _nodesViewSource.View;
+                            GenerateDataGridColumns(); // Генерируем колонки
                             ApplyCustomFilter();
                         }
                         else if (_currentViewType == "Related")
                         {
                             var relatedNodes = await BDController.LoadRelatedNodes(_client, _currentContextNode);
                             _currentNodes = relatedNodes;
-                            NodesListBox.ItemsSource = relatedNodes;
+                            _nodesViewSource.Source = _currentNodes;
+                            NodesDataGrid.ItemsSource = _nodesViewSource.View;
+                            GenerateDataGridColumns(); // Генерируем колонки для Related
                             ApplyCustomFilter();
                         }
                     }
@@ -503,24 +494,21 @@ namespace NeoClientVis
         /// <param name="e"></param>
         private async void DeleteMenuItem_Click(object sender, RoutedEventArgs e)
         {
-            if (NodesListBox.SelectedItem is NodeData selectedNode)
+            if (NodesDataGrid.SelectedItem is NodeData selectedNode)
             {
                 try
                 {
                     string label;
-
                     if (_currentViewType == "Type")
                     {
                         var selectedType = NodeTypeComboBox.SelectedItem as string;
                         var selectedNodeType = _nodeTypeCollection.NodeTypes
                             .FirstOrDefault(nt => nt.Label.ContainsKey(selectedType));
-
                         if (selectedNodeType == null)
                         {
                             MessageBox.Show("Тип узла не найден!");
                             return;
                         }
-
                         label = selectedNodeType.Label.Values.First();
                     }
                     else if (_currentViewType == "Related")
@@ -534,30 +522,30 @@ namespace NeoClientVis
                         MessageBox.Show("Неизвестный режим просмотра!");
                         return;
                     }
-
                     var result = MessageBox.Show($"Вы уверены, что хотите удалить узел '{selectedNode.DisplayString}'?",
                         "Подтверждение удаления", MessageBoxButton.YesNo, MessageBoxImage.Warning);
-
                     if (result == MessageBoxResult.Yes)
                     {
                         await BDController.DeleteNode(_client, label, selectedNode.Properties);
-
                         // Обновляем текущий список в зависимости от режима
                         if (_currentViewType == "Type")
                         {
                             var nodes = await BDController.LoadNodesByType(_client, label);
                             _currentNodes = nodes;
-                            NodesListBox.ItemsSource = nodes;
+                            _nodesViewSource.Source = _currentNodes;
+                            NodesDataGrid.ItemsSource = _nodesViewSource.View;
+                            GenerateDataGridColumns(); // Генерируем колонки
                             ApplyCustomFilter();
                         }
                         else if (_currentViewType == "Related")
                         {
                             var relatedNodes = await BDController.LoadRelatedNodes(_client, _currentContextNode);
                             _currentNodes = relatedNodes;
-                            NodesListBox.ItemsSource = relatedNodes;
+                            _nodesViewSource.Source = _currentNodes;
+                            NodesDataGrid.ItemsSource = _nodesViewSource.View;
+                            GenerateDataGridColumns(); // Генерируем колонки для Related
                             ApplyCustomFilter();
                         }
-
                         MessageBox.Show("Узел успешно удалён.");
                     }
                 }
@@ -608,7 +596,7 @@ namespace NeoClientVis
 
         private async void CreateRelationshipButton_Click(object sender, RoutedEventArgs e)
         {
-            if (NodesListBox.SelectedItem is NodeData selectedNode)
+            if (NodesDataGrid.SelectedItem is NodeData selectedNode)
             {
                 _selectedNodeForRelationship = selectedNode;
 
@@ -643,31 +631,26 @@ namespace NeoClientVis
             }
         }
 
-
-        // Заглушки для остальных пунктов меню
-
         private async void RelatedMenuItem_Click(object sender, RoutedEventArgs e)
         {
-            if (NodesListBox.SelectedItem is NodeData selectedNode)
+            if (NodesDataGrid.SelectedItem is NodeData selectedNode)
             {
                 try
                 {
                     // Сохраняем текущий вид
                     _navigationHistory.Push(_currentNodes.ToList());
-
                     // Загружаем связанные узлы
                     var relatedNodes = await BDController.LoadRelatedNodes(_client, selectedNode);
                     _currentNodes = relatedNodes;
-                    NodesListBox.ItemsSource = relatedNodes;
+                    _nodesViewSource.Source = _currentNodes;
+                    NodesDataGrid.ItemsSource = _nodesViewSource.View;
+                    GenerateDataGridColumns(); // Генерируем колонки для Related (смешанные типы)
                     ApplyCustomFilter();
-
                     // Обновляем состояние
                     _currentViewType = "Related";
                     _currentContextNode = selectedNode;
-
                     // Показываем кнопку "Назад"
                     BackButton.Visibility = Visibility.Visible;
-
                     // Обновляем заголовок
                     this.Title = $"Связанные с: {selectedNode.DisplayString}";
                 }
@@ -686,16 +669,16 @@ namespace NeoClientVis
             if (_navigationHistory.Count > 0)
             {
                 var previousNodes = _navigationHistory.Pop();
-                _currentNodes = previousNodes;  // Добавьте это для синхронизации состояния
-                NodesListBox.ItemsSource = previousNodes;
+                _currentNodes = previousNodes; // Добавьте это для синхронизации состояния
+                _nodesViewSource.Source = _currentNodes;
+                NodesDataGrid.ItemsSource = _nodesViewSource.View;
+                GenerateDataGridColumns(); // Генерируем колонки (может вернуться к Type)
                 ApplyCustomFilter();
-
                 if (_navigationHistory.Count == 0)
                 {
                     BackButton.Visibility = Visibility.Collapsed;
                     _currentViewType = "Type";
                     this.Title = "Neo4j Node Viewer";
-
                     // Перезагружаем актуальный список с текущими фильтрами из БД
                     FilterControl_Changed(null, new RoutedEventArgs());
                 }
@@ -703,7 +686,7 @@ namespace NeoClientVis
         }
         private async void GoToMenuItem_Click(object sender, RoutedEventArgs e)
         {
-            if (NodesListBox.SelectedItem is NodeData selectedNode)
+            if (NodesDataGrid.SelectedItem is NodeData selectedNode)
             {
                 try
                 {
@@ -752,33 +735,28 @@ namespace NeoClientVis
 
         private async void ReplaceMenuItem_Click(object sender, RoutedEventArgs e)
         {
-            if (NodesListBox.SelectedItem is NodeData selectedNode)
+            if (NodesDataGrid.SelectedItem is NodeData selectedNode)
             {
                 try
                 {
                     string label = _currentViewType == "Type"
                         ? NodeTypeComboBox.SelectedItem as string
                         : selectedNode.Properties["Label"].ToString();
-
                     var nodeType = _nodeTypeCollection.NodeTypes
                         .FirstOrDefault(nt => nt.Label.ContainsKey(label));
-
                     if (nodeType == null)
                     {
                         MessageBox.Show($"Тип узла '{label}' не найден!");
                         return;
                     }
-
                     // Создаем копию свойств для редактирования
                     var propertiesCopy = new Dictionary<string, object>(
                         selectedNode.Properties
                             .Where(p => p.Key != "Id" && p.Key != "Label")
                             .ToDictionary(p => p.Key, p => p.Value));
-
                     // Открываем окно редактирования
                     var editWindow = new EditNodeWindow(propertiesCopy, nodeType.Properties);
                     editWindow.Owner = this;
-
                     if (editWindow.ShowDialog() == true)
                     {
                         // Выполняем замену
@@ -789,23 +767,25 @@ namespace NeoClientVis
                             editWindow.Properties,
                             nodeType.Properties,
                             typeLabel);
-
                         // Обновляем интерфейс
                         if (_currentViewType == "Type")
                         {
                             var nodes = await BDController.LoadNodesByType(_client, typeLabel);
                             _currentNodes = nodes;
-                            NodesListBox.ItemsSource = nodes;
+                            _nodesViewSource.Source = _currentNodes;
+                            NodesDataGrid.ItemsSource = _nodesViewSource.View;
+                            GenerateDataGridColumns(); // Генерируем колонки
                             ApplyCustomFilter();
                         }
                         else if (_currentViewType == "Related")
                         {
                             var relatedNodes = await BDController.LoadRelatedNodes(_client, _currentContextNode);
                             _currentNodes = relatedNodes;
-                            NodesListBox.ItemsSource = relatedNodes;
+                            _nodesViewSource.Source = _currentNodes;
+                            NodesDataGrid.ItemsSource = _nodesViewSource.View;
+                            GenerateDataGridColumns(); // Генерируем колонки для Related
                             ApplyCustomFilter();
                         }
-
                         MessageBox.Show("Узел успешно заменен!");
                     }
                 }
@@ -823,14 +803,13 @@ namespace NeoClientVis
 
         private async void AddMenuItem_Click(object sender, RoutedEventArgs e)
         {
-            if (NodesListBox.SelectedItem is NodeData selectedNode)
+            if (NodesDataGrid.SelectedItem is NodeData selectedNode)
             {
                 try
                 {
                     // Шаг 1: Открываем окно для создания нового связанного узла
                     var addLinkedNodeWindow = new AddLinkedNodeWindow(_nodeTypeCollection);
                     addLinkedNodeWindow.Owner = this;
-
                     if (addLinkedNodeWindow.ShowDialog() == true)
                     {
                         // Получаем данные из окна
@@ -841,33 +820,32 @@ namespace NeoClientVis
                             MessageBox.Show("Выбранный тип не найден!");
                             return;
                         }
-
                         string label = selectedNodeType.Label.Values.First();
                         Dictionary<string, object> newProperties = addLinkedNodeWindow.Properties;
                         string relationshipType = addLinkedNodeWindow.RelationshipType;
-
                         // Шаг 2: Создаём новый узел
                         var newNode = await BDController.AddNodeToDb(_client, label, newProperties, selectedNodeType.Properties);
-
                         // Шаг 3: Создаём связь между выбранным узлом и новым
                         await BDController.CreateRelationship(_client, selectedNode, newNode, relationshipType);
-
                         // Шаг 4: Обновляем текущий список в зависимости от режима просмотра
                         if (_currentViewType == "Type")
                         {
                             var nodes = await BDController.LoadNodesByType(_client, label);
                             _currentNodes = nodes;
-                            NodesListBox.ItemsSource = nodes;
+                            _nodesViewSource.Source = _currentNodes;
+                            NodesDataGrid.ItemsSource = _nodesViewSource.View;
+                            GenerateDataGridColumns(); // Генерируем колонки
                             ApplyCustomFilter();
                         }
                         else if (_currentViewType == "Related")
                         {
                             var relatedNodes = await BDController.LoadRelatedNodes(_client, _currentContextNode);
                             _currentNodes = relatedNodes;
-                            NodesListBox.ItemsSource = relatedNodes;
+                            _nodesViewSource.Source = _currentNodes;
+                            NodesDataGrid.ItemsSource = _nodesViewSource.View;
+                            GenerateDataGridColumns(); // Генерируем колонки для Related
                             ApplyCustomFilter();
                         }
-
                         MessageBox.Show("Новый объект успешно добавлен и связан!");
                     }
                 }
@@ -884,18 +862,90 @@ namespace NeoClientVis
         private void ApplyCustomFilter()
         {
             if (_currentNodes == null) return;
-
             var filteredNodes = _currentNodes; // Начинаем с текущего списка (после динамических фильтров)
-
             if (_customFilters.TryGetValue(_selectedCustomFilter, out var filter) && filter != null)
             {
                 filteredNodes = filter.Apply(filteredNodes);
             }
+            _nodesViewSource.Source = filteredNodes;
+            NodesDataGrid.ItemsSource = _nodesViewSource.View;
+            GenerateDataGridColumns(); // Генерируем колонки (на случай изменений в фильтре)
+        }
+        // Метод для генерации колонок
+        private void GenerateDataGridColumns()
+        {
+            NodesDataGrid.Columns.Clear(); // Очищаем предыдущие колонки
 
-            NodesListBox.ItemsSource = filteredNodes;
+            if (_currentViewType == "Type")
+            {
+                // Для режима "Type": используем свойства типа с правильными типами колонок
+                var selectedType = NodeTypeComboBox.SelectedItem as string;
+                var selectedNodeType = _nodeTypeCollection.NodeTypes.FirstOrDefault(nt => nt.Label.ContainsKey(selectedType));
+                if (selectedNodeType == null) return;
+
+                var properties = selectedNodeType.Properties;
+                foreach (var prop in properties.Where(p => p.Key != "Id" && p.Key != "Label"))
+                {
+                    DataGridColumn column;
+                    if (prop.Value == typeof(bool))
+                    {
+                        column = new DataGridCheckBoxColumn
+                        {
+                            Header = prop.Key,
+                            Binding = new Binding($"Properties[{prop.Key}]")
+                        };
+                    }
+                    else
+                    {
+                        column = new DataGridTextColumn
+                        {
+                            Header = prop.Key,
+                            Binding = new Binding($"Properties[{prop.Key}]")
+                        };
+                        if (prop.Value == typeof(Neo4j.Driver.LocalDate) || prop.Value == typeof(DateTime))
+                        {
+                            ((DataGridTextColumn)column).Binding.StringFormat = "yyyy-MM-dd"; // Формат даты
+                        }
+                    }
+                    NodesDataGrid.Columns.Add(column);
+                }
+            }
+            else if (_currentViewType == "Related")
+            {
+                // Для режима "Related": вычисляем объединение всех свойств, все колонки как текст (из-за смешанных типов)
+                // Добавляем колонку "Тип" (Label) первой
+                var labelColumn = new DataGridTextColumn
+                {
+                    Header = "Тип",
+                    Binding = new Binding("Properties[Label]")
+                };
+                NodesDataGrid.Columns.Add(labelColumn);
+
+                // Объединение ключей свойств
+                var allProps = _currentNodes
+                    .SelectMany(n => n.Properties.Keys)
+                    .Distinct()
+                    .Where(k => k != "Id" && k != "Label")
+                    .OrderBy(k => k) // Для стабильного порядка
+                    .ToList();
+
+                foreach (var prop in allProps)
+                {
+                    var column = new DataGridTextColumn
+                    {
+                        Header = prop,
+                        Binding = new Binding($"Properties[{prop}]") { Mode = BindingMode.OneWay } // OneWay, чтобы не падать на отсутствующие свойства
+                    };
+                    // Специальный формат для известных полей, как "Дата"
+                    if (prop == "Дата")
+                    {
+                        column.Binding.StringFormat = "yyyy-MM-dd";
+                    }
+                    NodesDataGrid.Columns.Add(column);
+                }
+            }
         }
 
-       
 
         private void CustomFilterComboBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
         {

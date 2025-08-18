@@ -11,45 +11,43 @@
             <ColumnDefinition Width="2*"/>
             <ColumnDefinition Width="*"/>
         </Grid.ColumnDefinitions>
-
         <!-- Панель управления -->
         <StackPanel Orientation="Horizontal" Grid.Row="0" Grid.Column="0" Grid.ColumnSpan="2" Margin="10">
-
-            <Button x:Name="BackButton" 
-                Content="Назад" 
+            <Button x:Name="BackButton"
+                Content="Назад"
                 Margin="0,0,10,0"
                 Click="BackButton_Click"
                 Visibility="Collapsed"/>
-
-
-            <ComboBox x:Name="NodeTypeComboBox" 
-                      Width="200" 
+            <ComboBox x:Name="NodeTypeComboBox"
+                      Width="200"
                       SelectionChanged="NodeTypeComboBox_SelectionChanged"/>
-
-            <Button x:Name="AddNodeTypeButton" 
-                    Content="Добавить тип" 
-                    Margin="10,0,0,0" 
+            <Button x:Name="AddNodeTypeButton"
+                    Content="Добавить тип"
+                    Margin="10,0,0,0"
                     Click="AddNodeTypeButton_Click"/>
-            <Button x:Name="AddNodeButton" 
-                    Content="Добавить объект" 
-                    Margin="10,0,0,0" 
+            <Button x:Name="AddNodeButton"
+                    Content="Добавить объект"
+                    Margin="10,0,0,0"
                     Click="AddNodeButton_Click"/>
-            <Button x:Name="ResetFiltersButton" 
-                    Content="Сбросить фильтры" 
-                    Margin="10,0,0,0" 
+            <Button x:Name="ResetFiltersButton"
+                    Content="Сбросить фильтры"
+                    Margin="10,0,0,0"
                     Click="ResetFiltersButton_Click"/>
-            <Button x:Name="CreateRelationshipButton" 
-                    Content="Создать связь" 
-                    Margin="10,0,0,0" 
+            <Button x:Name="CreateRelationshipButton"
+                    Content="Создать связь"
+                    Margin="10,0,0,0"
                     Click="CreateRelationshipButton_Click"/>
         </StackPanel>
-
         <!-- Список узлов с контекстным меню -->
-        <ListBox x:Name="NodesListBox" 
-                 Grid.Row="1" Grid.Column="0" 
-                 Margin="10"
-                 DisplayMemberPath="DisplayString">
-            <ListBox.ContextMenu>
+        <!-- Только просмотр, если не нужно редактирование -->
+        <DataGrid x:Name="NodesDataGrid"
+          Grid.Row="1" Grid.Column="0"
+          Margin="10"
+          AutoGenerateColumns="False"
+          IsReadOnly="True"
+          CanUserSortColumns="True">
+            <!-- Включает сортировку -->
+            <DataGrid.ContextMenu>
                 <ContextMenu>
                     <MenuItem Header="Перейти" Click="GoToMenuItem_Click"/>
                     <MenuItem Header="Связанные" Click="RelatedMenuItem_Click"/>
@@ -58,9 +56,8 @@
                     <MenuItem Header="Заменить" Click="ReplaceMenuItem_Click"/>
                     <MenuItem Header="Удалить" Click="DeleteMenuItem_Click"/>
                 </ContextMenu>
-            </ListBox.ContextMenu>
-        </ListBox>
-
+            </DataGrid.ContextMenu>
+        </DataGrid>
         <!-- Правая колонка: панель фильтров -->
         <Grid Grid.Row="1" Grid.Column="1" Margin="10">
             <Grid.RowDefinitions>
@@ -69,21 +66,18 @@
                 <RowDefinition Height="*"/>
                 <RowDefinition Height="Auto"/>
             </Grid.RowDefinitions>
-
-            <ComboBox x:Name="CustomFilterComboBox" 
-                      Grid.Row="0" 
-                      Width="200" 
-                      Margin="0,0,0,10" 
+            <ComboBox x:Name="CustomFilterComboBox"
+                      Grid.Row="0"
+                      Width="200"
+                      Margin="0,0,0,10"
                       SelectionChanged="CustomFilterComboBox_SelectionChanged"/>
-
             <ScrollViewer Grid.Row="1">
                 <StackPanel x:Name="FilterPanel" Orientation="Vertical"/>
             </ScrollViewer>
-
-            <Button x:Name="AddPropertyButton" 
-                    Grid.Row="2" 
-                    Content="Добавить свойство" 
-                    Margin="0,10,0,0" 
+            <Button x:Name="AddPropertyButton"
+                    Grid.Row="2"
+                    Content="Добавить свойство"
+                    Margin="0,10,0,0"
                     Click="AddPropertyButton_Click"/>
         </Grid>
     </Grid>
