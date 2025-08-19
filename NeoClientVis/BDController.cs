@@ -51,7 +51,23 @@ namespace NeoClientVis
             await client.Cypher
             .Match($"(n:{label})")
             .Set($"n.{newProperty} = ''") // Добавляем новое свойство с пустым значением
-                            .ExecuteWithoutResultsAsync();
+            .ExecuteWithoutResultsAsync();
+        }
+        /// <summary>
+                /// добавление свойства к существующей ноде
+                /// </summary>
+                /// <param name="client"></param>
+                /// <param name="label"></param>
+                /// <param name="newProperty"></param>
+                /// <param name="defaultValue"></param>
+                /// <returns></returns>
+        public static async Task UpdateNodesWithNewProperty(GraphClient client, string label, string newProperty, object defaultValue)
+        {
+            await client.Cypher
+                .Match($"(n:{label})")
+                .Set($"n.`{newProperty}` = $value")  // Добавлены backticks
+                .WithParam("value", defaultValue)
+                .ExecuteWithoutResultsAsync();
         }
         /// <summary>
         /// Метод загрузки типов узлов из базы
@@ -325,22 +341,7 @@ namespace NeoClientVis
                 throw new Exception($"Не удалось удалить узел: {ex.Message}");
             }
         }
-        /// <summary>
-        /// добавление свойства к существующей ноде
-        /// </summary>
-        /// <param name="client"></param>
-        /// <param name="label"></param>
-        /// <param name="newProperty"></param>
-        /// <param name="defaultValue"></param>
-        /// <returns></returns>
-        public static async Task UpdateNodesWithNewProperty(GraphClient client, string label, string newProperty, object defaultValue)
-        {
-            await client.Cypher
-            .Match($"(n:{label})")
-            .Set($"n.{newProperty} = $value")
-            .WithParam("value", defaultValue)
-            .ExecuteWithoutResultsAsync();
-        }
+
         public static async Task AddRelevanceToExistingNodes(GraphClient client, string label)
         {
             await client.Cypher
