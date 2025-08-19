@@ -19,12 +19,10 @@ namespace NeoClientVis
             _propertyInputs = new Dictionary<string, Control>();
             _propertyTypes = propertyTypes;
             Properties = null;
-
             foreach (var property in currentProperties)
             {
                 var label = new Label { Content = $"{property.Key}:" };
                 Control inputControl;
-
                 if (_propertyTypes[property.Key] == typeof(bool))
                 {
                     inputControl = new CheckBox
@@ -33,7 +31,7 @@ namespace NeoClientVis
                         Margin = new Thickness(0, 0, 0, 5)
                     };
                 }
-                else if (_propertyTypes[property.Key] == typeof(Neo4j.Driver.LocalDate))
+                else if (_propertyTypes[property.Key] == typeof(Neo4j.Driver.LocalDate) || _propertyTypes[property.Key] == typeof(DateTime))  // Добавлена проверка на DateTime
                 {
                     inputControl = new DatePicker
                     {
@@ -43,6 +41,15 @@ namespace NeoClientVis
                     if (property.Value is string dateStr && DateTime.TryParse(dateStr, out var date))
                     {
                         ((DatePicker)inputControl).SelectedDate = date;
+                    }
+                    else if (property.Value is DateTime dt)
+                    {
+                        ((DatePicker)inputControl).SelectedDate = dt;
+                    }
+                    // Добавьте обработку LocalDate, если нужно
+                    else if (property.Value is Neo4j.Driver.LocalDate localDate)
+                    {
+                        ((DatePicker)inputControl).SelectedDate = new DateTime(localDate.Year, localDate.Month, localDate.Day);
                     }
                 }
                 else
@@ -54,7 +61,6 @@ namespace NeoClientVis
                         Text = property.Value?.ToString() ?? ""
                     };
                 }
-
                 _propertyInputs[property.Key] = inputControl;
                 PropertiesPanel.Children.Add(label);
                 PropertiesPanel.Children.Add(inputControl);
@@ -66,12 +72,12 @@ namespace NeoClientVis
             Properties = new Dictionary<string, object>();
             foreach (var kvp in _propertyInputs)
             {
-                if (_propertyTypes[kvp.Key] == typeof(Neo4j.Driver.LocalDate))
+                if (_propertyTypes[kvp.Key] == typeof(Neo4j.Driver.LocalDate) || _propertyTypes[kvp.Key] == typeof(DateTime))  // Добавлена проверка на DateTime
                 {
                     var datePicker = kvp.Value as DatePicker;
                     if (datePicker?.SelectedDate.HasValue == true)
                     {
-                        Properties[kvp.Key] = datePicker.SelectedDate.Value.ToString("yyyy-MM-dd");
+                        Properties[kvp.Key] = datePicker.SelectedDate.Value.ToString("yyyy-MM-dd");  // Преобразование в строку для БД
                     }
                     else
                     {

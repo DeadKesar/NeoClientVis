@@ -173,10 +173,10 @@ namespace NeoClientVis
                 var validatedProperties = new Dictionary<string, object>();
                 foreach (var prop in properties)
                 {
-                    if (propertyTypes[prop.Key] == typeof(DateTime))
+                    if (propertyTypes[prop.Key] == typeof(Neo4j.Driver.LocalDate) || propertyTypes[prop.Key] == typeof(DateTime))
                     {
                         if (DateTime.TryParse(prop.Value?.ToString(), out var date))
-                            validatedProperties[prop.Key] = date.ToString("yyyy-MM-dd"); // Строка для БД
+                            validatedProperties[prop.Key] = new Neo4j.Driver.LocalDate(date.Year, date.Month, date.Day);
                         else
                             throw new ArgumentException($"Неверный формат даты для свойства '{prop.Key}': {prop.Value}");
                     }
@@ -262,7 +262,8 @@ namespace NeoClientVis
 
                 foreach (var prop in newProperties)
                 {
-                    if (propertyTypes != null && propertyTypes.TryGetValue(prop.Key, out var type) && type == typeof(Neo4j.Driver.LocalDate) && prop.Value is string dateStr)
+                    if (propertyTypes != null && propertyTypes.TryGetValue(prop.Key, out var type) &&
+                        (type == typeof(Neo4j.Driver.LocalDate) || type == typeof(DateTime)) && prop.Value is string dateStr)
                     {
                         if (DateTime.TryParse(dateStr, out var date))
                         {

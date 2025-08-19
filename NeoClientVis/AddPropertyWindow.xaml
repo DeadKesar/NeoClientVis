@@ -16,7 +16,7 @@
         <Label Grid.Row="2" Content="Тип свойства:"/>
         <ComboBox x:Name="PropertyTypeComboBox" Grid.Row="2" Width="200" Margin="40,51,40,5">
             <ComboBoxItem Content="Строка" Tag="System.String"/>
-            <ComboBoxItem Content="Дата" Tag="System.DateTime"/>
+            <ComboBoxItem Content="Дата" Tag="Neo4j.Driver.LocalDate, Neo4j.Driver"/>
         </ComboBox>
 
         <StackPanel Grid.Row="4" Orientation="Horizontal" HorizontalAlignment="Right">

@@ -872,6 +872,7 @@ namespace NeoClientVis
             GenerateDataGridColumns(); // Генерируем колонки (на случай изменений в фильтре)
         }
         // Метод для генерации колонок
+        // Метод для генерации колонок
         private void GenerateDataGridColumns()
         {
             NodesDataGrid.Columns.Clear(); // Очищаем предыдущие колонки
@@ -886,12 +887,15 @@ namespace NeoClientVis
                 var properties = selectedNodeType.Properties;
                 foreach (var prop in properties.Where(p => p.Key != "Id" && p.Key != "Label"))
                 {
+                    // Преобразуем ключ в читаемый заголовок: '_' -> ' '
+                    string displayHeader = prop.Key.Replace("_", " ");
+
                     DataGridColumn column;
                     if (prop.Value == typeof(bool))
                     {
                         column = new DataGridCheckBoxColumn
                         {
-                            Header = prop.Key,
+                            Header = displayHeader,
                             Binding = new Binding($"Properties[{prop.Key}]")
                         };
                     }
@@ -899,7 +903,7 @@ namespace NeoClientVis
                     {
                         column = new DataGridTextColumn
                         {
-                            Header = prop.Key,
+                            Header = displayHeader,
                             Binding = new Binding($"Properties[{prop.Key}]")
                         };
                         if (prop.Value == typeof(Neo4j.Driver.LocalDate) || prop.Value == typeof(DateTime))
@@ -931,9 +935,12 @@ namespace NeoClientVis
 
                 foreach (var prop in allProps)
                 {
+                    // Преобразуем ключ в читаемый заголовок: '_' -> ' '
+                    string displayHeader = prop.Replace("_", " ");
+
                     var column = new DataGridTextColumn
                     {
-                        Header = prop,
+                        Header = displayHeader,
                         Binding = new Binding($"Properties[{prop}]") { Mode = BindingMode.OneWay } // OneWay, чтобы не падать на отсутствующие свойства
                     };
                     // Специальный формат для известных полей, как "Дата"
