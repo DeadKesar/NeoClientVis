@@ -8,7 +8,7 @@ using System.Windows;
 using System.Windows.Controls;
 using System.ComponentModel;  // Для CollectionViewSource
 using System.Windows.Data;   // Для Binding
-
+using System.Windows.Threading;
 
 namespace NeoClientVis
 {
@@ -25,6 +25,7 @@ namespace NeoClientVis
         private Dictionary<string, IFilter> _customFilters;
         private string _selectedCustomFilter = "None";
         private CollectionViewSource _nodesViewSource;
+        private DispatcherTimer _refreshTimer;
         public MainWindow()
         {
             InitializeComponent();
@@ -40,6 +41,11 @@ namespace NeoClientVis
 
             CustomFilterComboBox.ItemsSource = _customFilters.Keys;
             CustomFilterComboBox.SelectedItem = "None";
+
+            _refreshTimer = new DispatcherTimer();
+            _refreshTimer.Interval = TimeSpan.FromSeconds(10);  // Каждые 10 секунд
+            _refreshTimer.Tick += RefreshTimer_Tick;
+            _refreshTimer.Start();  // Запустить таймер
 
         }
         /// <summary>
@@ -953,7 +959,76 @@ namespace NeoClientVis
             }
         }
 
+        private async void RefreshTimer_Tick(object sender, EventArgs e)
+        {
+            await RefreshCurrentView();
+        }
 
+        private async Task RefreshCurrentView()
+        {
+            if (_currentViewType == "Type" && NodeTypeComboBox.SelectedItem is string selectedType)
+            {
+                var selectedNodeType = _nodeTypeCollection.NodeTypes.FirstOrDefault(nt => nt.Label.ContainsKey(selectedType));
+                if (selectedNodeType != null)
+                {
+                    // Собираем текущие фильтры (как в FilterControl_Changed)
+                    var filters = new Dictionary<string, object>();
+                    if (_filterControls != null)
+                    {
+                        foreach (var kvp in _filterControls)
+                        {
+                            if (selectedNodeType.Properties.TryGetValue(kvp.Key, out var propType))
+                            {
+                                if (propType == typeof(bool))
+                                {
+                                    var trueCheck = (kvp.Value[0] as CheckBox)?.IsChecked ?? false;
+                                    var falseCheck = (kvp.Value[1] as CheckBox)?.IsChecked ?? false;
+                                    if (trueCheck && !falseCheck)
+                                        filters[kvp.Key] = true;
+                                    else if (!trueCheck && falseCheck)
+                                        filters[kvp.Key] = false;
+                                }
+                                else if (propType == typeof(DateTime) || propType == typeof(Neo4j.Driver.LocalDate))
+                                {
+                                    var fromDate = (kvp.Value[0] as DatePicker)?.SelectedDate;
+                                    var toDate = (kvp.Value[1] as DatePicker)?.SelectedDate;
+                                    if (fromDate.HasValue || toDate.HasValue)
+                                        filters[kvp.Key] = new { From = fromDate, To = toDate };
+                                }
+                                else
+                                {
+                                    var text = (kvp.Value[0] as TextBox)?.Text;
+                                    if (!string.IsNullOrWhiteSpace(text))
+                                        filters[kvp.Key] = text;
+                                }
+                            }
+                        }
+                    }
+                    string label = selectedNodeType.Label.Values.First();
+                    var nodes = await BDController.LoadFilteredNodes(_client, label, filters);
+                    _currentNodes = nodes;
+                    _nodesViewSource.Source = _currentNodes;
+                    NodesDataGrid.ItemsSource = _nodesViewSource.View;
+                    GenerateDataGridColumns();
+                    ApplyCustomFilter();  // Применяем кастомные фильтры поверх
+                }
+            }
+            else if (_currentViewType == "Related" && _currentContextNode != null)
+            {
+                var relatedNodes = await BDController.LoadRelatedNodes(_client, _currentContextNode);
+                _currentNodes = relatedNodes;
+                _nodesViewSource.Source = _currentNodes;
+                NodesDataGrid.ItemsSource = _nodesViewSource.View;
+                GenerateDataGridColumns();
+                ApplyCustomFilter();  // Только кастомные фильтры для Related
+            }
+        }
+
+        // Добавьте этот метод для кнопки "Обновить", если добавили кнопку в XAML
+        private async void RefreshButton_Click(object sender, RoutedEventArgs e)
+        {
+            await RefreshCurrentView();
+        }
         private void CustomFilterComboBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
         {
             if (CustomFilterComboBox.SelectedItem is string selected)
