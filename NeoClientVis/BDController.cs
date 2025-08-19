@@ -381,11 +381,9 @@ namespace NeoClientVis
         {
             // Начало запроса
             var query = client.Cypher.Match($"(n:{label})");
-
             // Список условий и параметров
             var conditions = new List<string>();
             var parameters = new Dictionary<string, object>();
-
             // Обработка фильтров
             foreach (var filter in filters)
             {
@@ -398,48 +396,39 @@ namespace NeoClientVis
                 {
                     var from = dateFilter.GetType().GetProperty("From")?.GetValue(dateFilter) as DateTime?;
                     var to = dateFilter.GetType().GetProperty("To")?.GetValue(dateFilter) as DateTime?;
-
                     var dateConditions = new List<string>();
                     if (from.HasValue)
                     {
-                        dateConditions.Add($"n.Дата >= date({{year: $fromYear, month: $fromMonth, day: $fromDay}})");
-                        parameters["fromYear"] = from.Value.Year;
-                        parameters["fromMonth"] = from.Value.Month;
-                        parameters["fromDay"] = from.Value.Day;
+                        dateConditions.Add($"n.{filter.Key} >= $fromDate");
+                        parameters["fromDate"] = new Neo4j.Driver.LocalDate(from.Value.Year, from.Value.Month, from.Value.Day);
                     }
                     if (to.HasValue)
                     {
-                        dateConditions.Add($"n.Дата <= date({{year: $toYear, month: $toMonth, day: $toDay}})");
-                        parameters["toYear"] = to.Value.Year;
-                        parameters["toMonth"] = to.Value.Month;
-                        parameters["toDay"] = to.Value.Day;
+                        dateConditions.Add($"n.{filter.Key} <= $toDate");
+                        parameters["toDate"] = new Neo4j.Driver.LocalDate(to.Value.Year, to.Value.Month, to.Value.Day);
                     }
-
                     if (dateConditions.Any())
                     {
                         conditions.Add($"n.{filter.Key} IS NOT NULL AND " + string.Join(" AND ", dateConditions));
                     }
                 }
-                else if (filter.Value is string stringValue) // Обработка строковых фильтров
+                else if (filter.Value is string stringValue) // Обработка строковых фильтров (теперь case-insensitive)
                 {
-                    conditions.Add($"n.{filter.Key} CONTAINS $str_{filter.Key}");
+                    conditions.Add($"toLower(n.{filter.Key}) CONTAINS toLower($str_{filter.Key})");
                     parameters[$"str_{filter.Key}"] = stringValue;
                 }
             }
-
             // Объединение условий в одно WHERE
             if (conditions.Any())
             {
                 var combinedCondition = string.Join(" AND ", conditions);
                 query = query.Where(combinedCondition);
             }
-
             // Добавление параметров
             foreach (var param in parameters)
             {
                 query = query.WithParam(param.Key, param.Value);
             }
-
             // Выполнение запроса и получение результатов
             var result = await query
                 .Return(n => new
@@ -448,18 +437,36 @@ namespace NeoClientVis
                     Id = n.Id()
                 })
                 .ResultsAsync;
-
             // Преобразование результатов в NodeData
             return result.Select(item =>
             {
                 item.Properties["Id"] = item.Id;
-                NormalizeDateProperty(item.Properties);
                 return new NodeData
                 {
                     Properties = item.Properties,
                     DisplayString = GetNodeDisplayString(item.Properties)
                 };
             }).ToList();
+        }
+
+        public static async Task<List<NodeData>> SearchNodes(GraphClient client, string label, string searchText)
+        {
+            var query = client.Cypher
+                .Match($"(n:{label})")
+                .Where($"ANY(prop IN keys(n) WHERE toLower(toString(n[prop])) CONTAINS toLower($searchText))")  // Case-insensitive
+                .WithParam("searchText", searchText)
+                .Return(n => n.As<Dictionary<string, object>>());
+            var results = (await query.ResultsAsync).ToList();
+            var nodes = new List<NodeData>();
+            foreach (var props in results)
+            {
+                nodes.Add(new NodeData
+                {
+                    Properties = props,
+                    DisplayString = GetNodeDisplayString(props)
+                });
+            }
+            return nodes;
         }
 
         public static async Task UpdateBoolProperties(GraphClient client, string label, string propertyName)
@@ -475,28 +482,6 @@ namespace NeoClientVis
                 .Where($"n.{propertyName} = 'False'")
                 .Set($"n.{propertyName} = false")
                 .ExecuteWithoutResultsAsync();
-        }
-
-        public static async Task<List<NodeData>> SearchNodes(GraphClient client, string label, string searchText)
-        {
-            var query = client.Cypher
-                .Match($"(n:{label})")
-                .Where($"ANY(prop IN keys(n) WHERE toString(n[prop]) CONTAINS $searchText")
-                .WithParam("searchText", searchText)
-                .Return(n => n.As<Dictionary<string, object>>());
-
-            var results = (await query.ResultsAsync).ToList();
-            var nodes = new List<NodeData>();
-
-            foreach (var props in results)
-            {
-                nodes.Add(new NodeData
-                {
-                    Properties = props,
-                    DisplayString = GetNodeDisplayString(props)
-                });
-            }
-            return nodes;
         }
 
         public static async Task CreateRelationship(
