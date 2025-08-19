@@ -1,4 +1,5 @@
-﻿using System;
+﻿using Neo4j.Driver;
+using System;
 using System.Collections.Generic;
 using System.Windows;
 using System.Windows.Controls;
@@ -103,7 +104,12 @@ namespace NeoClientVis
                     var datePicker = kvp.Value as DatePicker;
                     if (datePicker?.SelectedDate.HasValue == true)
                     {
-                        Properties[kvp.Key] = datePicker.SelectedDate.Value.ToString("yyyy-MM-dd"); // Преобразование в строку для БД
+                        //Properties[kvp.Key] = datePicker.SelectedDate.Value.ToString("yyyy-MM-dd");
+                        var date = datePicker.SelectedDate.Value;
+                        Properties[kvp.Key] = new LocalDate(date.Year, date.Month, date.Day);
+
+
+                        // Преобразование в строку для БД
                     }
                     else
                     {

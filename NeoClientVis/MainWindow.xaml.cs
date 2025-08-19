@@ -160,6 +160,7 @@ namespace NeoClientVis
                     CreateFilterControls(selectedNodeType.Properties);
                     GenerateDataGridColumns(); // Генерируем колонки
                     ApplyCustomFilter();
+                    await RefreshCurrentView();
                 }
             }
         }
@@ -400,6 +401,7 @@ namespace NeoClientVis
                         NodesDataGrid.ItemsSource = _nodesViewSource.View;
                         GenerateDataGridColumns(); // Генерируем колонки (на случай изменений)
                         ApplyCustomFilter();
+                        await RefreshCurrentView();
                     }
                 }
             }
@@ -471,6 +473,7 @@ namespace NeoClientVis
                             NodesDataGrid.ItemsSource = _nodesViewSource.View;
                             GenerateDataGridColumns(); // Генерируем колонки
                             ApplyCustomFilter();
+                            await RefreshCurrentView();
                         }
                         else if (_currentViewType == "Related")
                         {
@@ -480,6 +483,7 @@ namespace NeoClientVis
                             NodesDataGrid.ItemsSource = _nodesViewSource.View;
                             GenerateDataGridColumns(); // Генерируем колонки для Related
                             ApplyCustomFilter();
+                            await RefreshCurrentView(); 
                         }
                     }
                 }
@@ -542,6 +546,7 @@ namespace NeoClientVis
                             NodesDataGrid.ItemsSource = _nodesViewSource.View;
                             GenerateDataGridColumns(); // Генерируем колонки
                             ApplyCustomFilter();
+                            await RefreshCurrentView();
                         }
                         else if (_currentViewType == "Related")
                         {
@@ -551,6 +556,7 @@ namespace NeoClientVis
                             NodesDataGrid.ItemsSource = _nodesViewSource.View;
                             GenerateDataGridColumns(); // Генерируем колонки для Related
                             ApplyCustomFilter();
+                            await RefreshCurrentView();
                         }
                         MessageBox.Show("Узел успешно удалён.");
                     }
@@ -782,6 +788,7 @@ namespace NeoClientVis
                             NodesDataGrid.ItemsSource = _nodesViewSource.View;
                             GenerateDataGridColumns(); // Генерируем колонки
                             ApplyCustomFilter();
+                            await RefreshCurrentView();
                         }
                         else if (_currentViewType == "Related")
                         {
@@ -791,6 +798,7 @@ namespace NeoClientVis
                             NodesDataGrid.ItemsSource = _nodesViewSource.View;
                             GenerateDataGridColumns(); // Генерируем колонки для Related
                             ApplyCustomFilter();
+                            await RefreshCurrentView();
                         }
                         MessageBox.Show("Узел успешно заменен!");
                     }
@@ -842,6 +850,7 @@ namespace NeoClientVis
                             NodesDataGrid.ItemsSource = _nodesViewSource.View;
                             GenerateDataGridColumns(); // Генерируем колонки
                             ApplyCustomFilter();
+                            await RefreshCurrentView();
                         }
                         else if (_currentViewType == "Related")
                         {
@@ -851,6 +860,7 @@ namespace NeoClientVis
                             NodesDataGrid.ItemsSource = _nodesViewSource.View;
                             GenerateDataGridColumns(); // Генерируем колонки для Related
                             ApplyCustomFilter();
+                            await RefreshCurrentView();
                         }
                         MessageBox.Show("Новый объект успешно добавлен и связан!");
                     }

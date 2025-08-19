@@ -69,12 +69,12 @@ namespace NeoClientVis
                 .WithParam("value", defaultValue)
                 .ExecuteWithoutResultsAsync();
         }
-        /// <summary>
-        /// Метод загрузки типов узлов из базы
-        /// </summary>
-        /// <param name="client">клиент базы данны</param>
-        /// <returns></returns>
-        public static async Task<NodeTypeCollection> LoadNodeTypesFromDb(GraphClient client)
+        /// <summary>
+                /// Метод загрузки типов узлов из базы
+                /// </summary>
+                /// <param name="client">клиент базы данны</param>
+                /// <returns></returns>
+        public static async Task<NodeTypeCollection> LoadNodeTypesFromDb(GraphClient client)
         {
             try
             {
@@ -86,14 +86,15 @@ namespace NeoClientVis
                 {
                     string json = dataObj.ToString();
                     Console.WriteLine($"Загруженные данные NodeTypeCollection: {json}"); // Для отладки
-                    var settings = new JsonSerializerSettings
+                    var settings = new JsonSerializerSettings
                     {
                         TypeNameHandling = TypeNameHandling.Auto,
                         Error = (sender, args) =>
                         {
                             args.ErrorContext.Handled = true;
                             Console.WriteLine($"Ошибка десериализации: {args.ErrorContext.Error.Message}");
-                        }
+                        },
+                        Binder = new VersionIgnoringSerializationBinder()
                     };
                     return JsonConvert.DeserializeObject<NodeTypeCollection>(json, settings);
                 }
@@ -114,10 +115,10 @@ namespace NeoClientVis
                 // Если строка в формате "yyyy-MM-dd", преобразуется успешно.
                 // Если неверный формат, запрос упадёт — обработайте в логе.
                 await client.Cypher
-.Match($"(n:{label})")
-.Where("n.Дата IS NOT NULL")
-.Set("n.Дата = date(n.Дата)")
-.ExecuteWithoutResultsAsync();
+                    .Match($"(n:{label})")
+                    .Where("n.Дата IS NOT NULL")
+                    .Set("n.Дата = date(n.Дата)")
+                    .ExecuteWithoutResultsAsync();
             }
             catch (Exception ex)
             {
@@ -136,22 +137,23 @@ namespace NeoClientVis
         {
             try
             {
-                // Сериализуем всю коллекцию в JSON
-                string json = JsonConvert.SerializeObject(nodeTypeCollection, Formatting.Indented, new JsonSerializerSettings
+                // Сериализуем всю коллекцию в JSON
+                string json = JsonConvert.SerializeObject(nodeTypeCollection, Formatting.Indented, new JsonSerializerSettings
                 {
                     TypeNameHandling = TypeNameHandling.Auto,
-                    ReferenceLoopHandling = ReferenceLoopHandling.Ignore
+                    ReferenceLoopHandling = ReferenceLoopHandling.Ignore,
+                    Binder = new VersionIgnoringSerializationBinder()
                 });
-                // Удаляем старый узел коллекции, если существует
-                await client.Cypher
-.Match("(n:NodeTypeCollection)")
-.Delete("n")
-.ExecuteWithoutResultsAsync();
-                // Создаем новый узел с сериализованной коллекцией
-                await client.Cypher
-.Create("(n:NodeTypeCollection {Data: $json})")
-.WithParam("json", json)
-.ExecuteWithoutResultsAsync();
+                // Удаляем старый узел коллекции, если существует
+                await client.Cypher
+                    .Match("(n:NodeTypeCollection)")
+                    .Delete("n")
+                    .ExecuteWithoutResultsAsync();
+                // Создаем новый узел с сериализованной коллекцией
+                await client.Cypher
+                    .Create("(n:NodeTypeCollection {Data: $json})")
+                    .WithParam("json", json)
+                    .ExecuteWithoutResultsAsync();
             }
             catch (Exception ex)
             {
@@ -208,6 +210,7 @@ namespace NeoClientVis
                 result.Properties["Id"] = result.Id;
                 result.Properties["Label"] = label; // Добавляем для consistency
                 NormalizeDateProperty(result.Properties);
+                await MigrateDatesForNode(client, result.Id);
                 return new NodeData
                 {
                     Properties = result.Properties,
@@ -218,6 +221,28 @@ namespace NeoClientVis
             {
                 MessageBox.Show($"Ошибка при добавлении узла: {ex.Message}");
                 throw;
+            }
+        }
+
+        public static async Task MigrateDatesForNode(GraphClient client, long nodeId)
+        {
+            try
+            {
+                // Объединяем условия в один WHERE с AND
+                await client.Cypher
+                    .Match("(n)")
+                    .Where("id(n) = $nodeId AND n.Дата IS NOT NULL")  // Один WHERE с AND
+                    .Set("n.Дата = date(n.Дата)")
+                    .WithParam("nodeId", nodeId)
+                    .ExecuteWithoutResultsAsync();
+
+                // Если есть другие date-свойства, добавьте аналогично в SET:
+                // .Set("n.Дата_окончания = date(n.Дата_окончания)")
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Ошибка миграции даты для узла {nodeId}: {ex.Message}");
+                // Опционально: MessageBox.Show(...);
             }
         }
         /// <summary>
@@ -408,12 +433,12 @@ namespace NeoClientVis
             }
             // Выполнение запроса и получение результатов
             var result = await query
-.Return(n => new
-{
-    Properties = n.As<Dictionary<string, object>>(),
-    Id = n.Id()
-})
-.ResultsAsync;
+                .Return(n => new
+                {
+                    Properties = n.As<Dictionary<string, object>>(),
+                    Id = n.Id()
+                })
+                .ResultsAsync;
             // Преобразование результатов в NodeData
             return result.Select(item =>
             {

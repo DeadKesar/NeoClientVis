@@ -1,4 +1,5 @@
 ﻿using Newtonsoft.Json;
+using Neo4j.Driver;
 
 namespace NeoClientVis
 {
@@ -35,7 +36,7 @@ namespace NeoClientVis
                 {
                     { "Актуальность", typeof(bool) },
                     { "Имя", typeof(string) },
-                    { "Дата", typeof(DateTime) },
+                    { "Дата", typeof(Neo4j.Driver.LocalDate) },  // Измените на LocalDate
                     { "Путь_к_файлу", typeof(string) }
                 };
 
