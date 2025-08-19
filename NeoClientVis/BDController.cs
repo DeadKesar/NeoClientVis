@@ -467,18 +467,26 @@ namespace NeoClientVis
         public static async Task<List<NodeData>> SearchNodes(GraphClient client, string label, string searchText)
         {
             var query = client.Cypher
-            .Match($"(n:{label})")
-            .Where($"ANY(prop IN keys(n) WHERE toLower(toString(n[prop])) CONTAINS toLower($searchText))")
-            .WithParam("searchText", searchText)
-            .Return(n => n.As<Dictionary<string, object>>());
+                .Match($"(n:{label})")
+                .Where($"ANY(prop IN keys(n) WHERE toLower(toString(n[prop])) CONTAINS toLower($searchText))")
+                .WithParam("searchText", searchText)
+                .Return(n => new
+                {
+                    Properties = n.As<Dictionary<string, object>>(),
+                    Id = n.Id()
+                });
+
             var results = (await query.ResultsAsync).ToList();
+
             var nodes = new List<NodeData>();
-            foreach (var props in results)
+            foreach (var item in results)
             {
+                item.Properties["Id"] = item.Id;
+                NormalizeDateProperty(item.Properties);  // Если нужно, добавьте нормализацию дат, как в других методах
                 nodes.Add(new NodeData
                 {
-                    Properties = props,
-                    DisplayString = GetNodeDisplayString(props)
+                    Properties = item.Properties,
+                    DisplayString = GetNodeDisplayString(item.Properties)
                 });
             }
             return nodes;
