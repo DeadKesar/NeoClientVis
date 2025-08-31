@@ -1,0 +1,58 @@
+﻿<Window x:Class="NeoClientVis.BulkAddWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Массовая загрузка файлов" Height="600" Width="900" WindowStartupLocation="CenterOwner">
+    <Grid Margin="10">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <!-- Панель управления -->
+        <StackPanel Grid.Row="0" Orientation="Horizontal" Margin="0,0,0,10">
+            <Label Content="Тип узла:" VerticalAlignment="Center"/>
+            <ComboBox x:Name="NodeTypeComboBox" Width="200" Margin="5,0,0,0"/>
+
+            <Label Content="Общая дата:" VerticalAlignment="Center" Margin="20,0,0,0"/>
+            <DatePicker x:Name="CommonDatePicker" Width="150" Margin="5,0,0,0"/>
+
+            <Button x:Name="ApplyDateButton" Content="Применить дату ко всем" Margin="10,0,0,0" Click="ApplyDateButton_Click"/>
+        </StackPanel>
+
+        <!-- Выбор папки -->
+        <StackPanel Grid.Row="1" Orientation="Horizontal" Margin="0,0,0,10">
+            <Button x:Name="SelectFolderButton" Content="Выбрать папку" Margin="0,0,10,0" Click="SelectFolderButton_Click"/>
+            <TextBlock x:Name="SelectedFolderText" Text="Папка не выбрана" VerticalAlignment="Center"/>
+        </StackPanel>
+
+        <!-- Таблица файлов -->
+        <DataGrid x:Name="FilesDataGrid" Grid.Row="2" AutoGenerateColumns="False" CanUserAddRows="False">
+            <DataGrid.Columns>
+                <DataGridCheckBoxColumn Header="Добавить" Binding="{Binding Add}" Width="60"/>
+                <DataGridTextColumn Header="Имя" Binding="{Binding Name}" Width="200" IsReadOnly="False"/>
+                <DataGridTextColumn Header="Путь к файлу" Binding="{Binding PathToFile}" Width="*" IsReadOnly="True"/>
+                <DataGridTemplateColumn Header="Дата" Width="150">
+                    <DataGridTemplateColumn.CellTemplate>
+                        <DataTemplate>
+                            <TextBlock Text="{Binding Date, StringFormat=yyyy-MM-dd}"/>
+                        </DataTemplate>
+                    </DataGridTemplateColumn.CellTemplate>
+                    <DataGridTemplateColumn.CellEditingTemplate>
+                        <DataTemplate>
+                            <DatePicker SelectedDate="{Binding Date}"/>
+                        </DataTemplate>
+                    </DataGridTemplateColumn.CellEditingTemplate>
+                </DataGridTemplateColumn>
+                <DataGridCheckBoxColumn Header="Актуальность" Binding="{Binding Actual}" Width="100"/>
+            </DataGrid.Columns>
+        </DataGrid>
+
+        <!-- Кнопки действия -->
+        <StackPanel Grid.Row="3" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,10,0,0">
+            <Button x:Name="AddSelectedButton" Content="Добавить выбранные" Width="150" Margin="0,0,10,0" Click="AddSelectedButton_Click"/>
+            <Button x:Name="CancelButton" Content="Отмена" Width="100" Click="CancelButton_Click"/>
+        </StackPanel>
+    </Grid>
+</Window>

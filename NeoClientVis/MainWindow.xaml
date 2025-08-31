@@ -41,6 +41,10 @@
                     Content="Обновить" 
                     Margin="10,0,0,0" 
                     Click="RefreshButton_Click"/>
+            <Button x:Name="BulkAddButton"
+                Content="Массовая загрузка"
+                Margin="10,0,0,0"
+                Click="BulkAddButton_Click"/>
         </StackPanel>
         <!-- Список узлов с контекстным меню -->
         <!-- Только просмотр, если не нужно редактирование -->

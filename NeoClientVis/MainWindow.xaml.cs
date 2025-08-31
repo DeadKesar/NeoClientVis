@@ -1047,5 +1047,14 @@ namespace NeoClientVis
                 ApplyCustomFilter();
             }
         }
+        private async void BulkAddButton_Click(object sender, RoutedEventArgs e)
+        {
+            var bulkWindow = new BulkAddWindow(_client, _nodeTypeCollection);
+            bulkWindow.Owner = this;
+            if (bulkWindow.ShowDialog() == true)
+            {
+                await RefreshCurrentView();
+            }
+        }
     }
 }
